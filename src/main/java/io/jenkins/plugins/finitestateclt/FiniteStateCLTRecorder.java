@@ -46,6 +46,9 @@ public class FiniteStateCLTRecorder extends Recorder {
     private String projectVersion;
     private String scanTypes;
     private Boolean externalizableId;
+    private Boolean scaEnabled;
+    private Boolean sastEnabled;
+    private Boolean configEnabled;
 
     @DataBoundConstructor
     public FiniteStateCLTRecorder(
@@ -55,7 +58,10 @@ public class FiniteStateCLTRecorder extends Recorder {
             String projectName,
             String projectVersion,
             String scanTypes,
-            Boolean externalizableId) {
+            Boolean externalizableId,
+            Boolean scaEnabled,
+            Boolean sastEnabled,
+            Boolean configEnabled) {
         this.subdomain = subdomain;
         this.apiToken = apiToken;
         this.binaryFilePath = binaryFilePath;
@@ -63,6 +69,9 @@ public class FiniteStateCLTRecorder extends Recorder {
         this.projectVersion = projectVersion;
         this.scanTypes = scanTypes;
         this.externalizableId = externalizableId;
+        this.scaEnabled = scaEnabled;
+        this.sastEnabled = sastEnabled;
+        this.configEnabled = configEnabled;
     }
 
     public String getSubdomain() {
@@ -91,6 +100,42 @@ public class FiniteStateCLTRecorder extends Recorder {
 
     public boolean getExternalizableId() {
         return externalizableId != null ? externalizableId : false;
+    }
+
+    public boolean getScaEnabled() {
+        return scaEnabled != null ? scaEnabled : true; // Default to true as it's required
+    }
+
+    public boolean getSastEnabled() {
+        return sastEnabled != null ? sastEnabled : false;
+    }
+
+    public boolean getConfigEnabled() {
+        return configEnabled != null ? configEnabled : false;
+    }
+
+    /**
+     * Convert checkbox values to scan types string format
+     */
+    private String buildScanTypesString() {
+        List<String> selectedScans = new ArrayList<>();
+
+        if (getScaEnabled()) {
+            selectedScans.add("sca");
+        }
+        if (getSastEnabled()) {
+            selectedScans.add("sast");
+        }
+        if (getConfigEnabled()) {
+            selectedScans.add("config");
+        }
+
+        // If no scans are selected, default to sca (required)
+        if (selectedScans.isEmpty()) {
+            selectedScans.add("sca");
+        }
+
+        return String.join(",", selectedScans);
     }
 
     @DataBoundSetter
@@ -126,6 +171,21 @@ public class FiniteStateCLTRecorder extends Recorder {
     @DataBoundSetter
     public void setExternalizableId(boolean externalizableId) {
         this.externalizableId = externalizableId;
+    }
+
+    @DataBoundSetter
+    public void setScaEnabled(boolean scaEnabled) {
+        this.scaEnabled = scaEnabled;
+    }
+
+    @DataBoundSetter
+    public void setSastEnabled(boolean sastEnabled) {
+        this.sastEnabled = sastEnabled;
+    }
+
+    @DataBoundSetter
+    public void setConfigEnabled(boolean configEnabled) {
+        this.configEnabled = configEnabled;
     }
 
     /**
@@ -210,11 +270,11 @@ public class FiniteStateCLTRecorder extends Recorder {
             java.net.HttpURLConnection httpConnection = (java.net.HttpURLConnection) connection;
             int responseCode = httpConnection.getResponseCode();
             listener.getLogger().println("HTTP Response Code: " + responseCode);
-            
+
             if (responseCode != 200) {
                 String errorMessage = "Failed to download CLT. HTTP Response: " + responseCode;
-                try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(httpConnection.getErrorStream()))) {
+                try (java.io.BufferedReader reader =
+                        new java.io.BufferedReader(new java.io.InputStreamReader(httpConnection.getErrorStream()))) {
                     String line;
                     StringBuilder errorResponse = new StringBuilder();
                     while ((line = reader.readLine()) != null) {
@@ -231,7 +291,7 @@ public class FiniteStateCLTRecorder extends Recorder {
         // Download the file
         long totalBytes = 0;
         try (java.io.InputStream in = connection.getInputStream();
-             java.io.OutputStream out = Files.newOutputStream(cltPath)) {
+                java.io.OutputStream out = Files.newOutputStream(cltPath)) {
 
             byte[] buffer = new byte[8192];
             int bytesRead;
@@ -245,7 +305,7 @@ public class FiniteStateCLTRecorder extends Recorder {
         if (!cltPath.toFile().exists()) {
             throw new IOException("Downloaded file does not exist");
         }
-        
+
         if (cltPath.toFile().length() == 0) {
             throw new IOException("Downloaded file is empty");
         }
@@ -262,8 +322,9 @@ public class FiniteStateCLTRecorder extends Recorder {
                     listener.getLogger().println("JAR file header verified successfully");
                 } else {
                     listener.getLogger().println("WARNING: File does not appear to be a valid JAR file");
-                    listener.getLogger().println("Expected PK header, got: " + 
-                        String.format("%02X %02X %02X %02X", header[0], header[1], header[2], header[3]));
+                    listener.getLogger()
+                            .println("Expected PK header, got: "
+                                    + String.format("%02X %02X %02X %02X", header[0], header[1], header[2], header[3]));
                 }
             }
         }
@@ -278,8 +339,14 @@ public class FiniteStateCLTRecorder extends Recorder {
     /**
      * Execute the CLT command
      */
-    private int executeCLT(Path cltPath, String binaryFile, String projectName, String projectVersion,
-                          String scanTypes, BuildListener listener) throws IOException, InterruptedException {
+    private int executeCLT(
+            Path cltPath,
+            String binaryFile,
+            String projectName,
+            String projectVersion,
+            String scanTypes,
+            BuildListener listener)
+            throws IOException, InterruptedException {
 
         // Build the command
         List<String> command = new ArrayList<>();
@@ -320,7 +387,7 @@ public class FiniteStateCLTRecorder extends Recorder {
         }
 
         int exitCode = process.waitFor();
-        
+
         if (exitCode == 0 && uploadUrl != null) {
             listener.getLogger().println("Finite State scan completed successfully");
             listener.getLogger().println("Upload URL: " + uploadUrl);
@@ -334,7 +401,7 @@ public class FiniteStateCLTRecorder extends Recorder {
     @Override
     public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener)
             throws InterruptedException, IOException {
-        
+
         listener.getLogger().println("Starting Finite State CLT upload...");
 
         // Validate required fields
@@ -384,9 +451,14 @@ public class FiniteStateCLTRecorder extends Recorder {
             return false;
         }
 
+        // Build scan types string from checkboxes
+        String finalScanTypes = buildScanTypesString();
+        listener.getLogger().println("Selected scan types: " + finalScanTypes);
+
         // Execute the CLT
         listener.getLogger().println("Executing Finite State CLT...");
-        int exitCode = executeCLT(cltPath, binaryFileObj.getAbsolutePath(), projectName, parsedVersion, scanTypes, listener);
+        int exitCode = executeCLT(
+                cltPath, binaryFileObj.getAbsolutePath(), projectName, parsedVersion, finalScanTypes, listener);
 
         if (exitCode == 0) {
             build.addAction(new FiniteStateCLTAction(projectName));
@@ -399,10 +471,9 @@ public class FiniteStateCLTRecorder extends Recorder {
     @Symbol("finite-state-clt")
     @Extension
     public static final class DescriptorImpl extends BuildStepDescriptor<Publisher> {
-        
+
         @RequirePOST
-        public ListBoxModel doFillApiTokenItems(
-                @AncestorInPath Item item, @QueryParameter String apiToken) {
+        public ListBoxModel doFillApiTokenItems(@AncestorInPath Item item, @QueryParameter String apiToken) {
             StandardListBoxModel items = new StandardListBoxModel();
             if (item == null) {
                 if (!Jenkins.get().hasPermission(Jenkins.ADMINISTER)) {
@@ -465,4 +536,4 @@ public class FiniteStateCLTRecorder extends Recorder {
             return "Finite State CLT Upload";
         }
     }
-} 
+}
