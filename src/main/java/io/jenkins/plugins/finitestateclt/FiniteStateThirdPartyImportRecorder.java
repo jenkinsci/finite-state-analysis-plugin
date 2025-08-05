@@ -405,30 +405,35 @@ public class FiniteStateThirdPartyImportRecorder extends Recorder {
         }
 
         @RequirePOST
+        // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckSubdomain(@AncestorInPath Item item, @QueryParameter String value)
                 throws IOException, ServletException {
             return checkRequiredValue(item, value);
         }
 
         @RequirePOST
+        // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckApiToken(@AncestorInPath Item item, @QueryParameter String value)
                 throws IOException, ServletException {
             return checkRequiredValue(item, value);
         }
 
         @RequirePOST
+        // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckScanFilePath(@AncestorInPath Item item, @QueryParameter String value)
                 throws IOException, ServletException {
             return checkRequiredValue(item, value);
         }
 
         @RequirePOST
+        // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckProjectName(@AncestorInPath Item item, @QueryParameter String value)
                 throws IOException, ServletException {
             return checkRequiredValue(item, value);
         }
 
         @RequirePOST
+        // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckScanType(@AncestorInPath Item item, @QueryParameter String value)
                 throws IOException, ServletException {
             return checkRequiredValue(item, value);
