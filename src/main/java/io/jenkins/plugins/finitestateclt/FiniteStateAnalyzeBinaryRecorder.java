@@ -37,7 +37,7 @@ import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.interceptor.RequirePOST;
 
-public class FiniteStateCLTRecorder extends Recorder {
+public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
 
     private String subdomain;
     private String apiToken;
@@ -49,9 +49,10 @@ public class FiniteStateCLTRecorder extends Recorder {
     private Boolean scaEnabled;
     private Boolean sastEnabled;
     private Boolean configEnabled;
+    private Boolean preRelease;
 
     @DataBoundConstructor
-    public FiniteStateCLTRecorder(
+    public FiniteStateAnalyzeBinaryRecorder(
             String subdomain,
             String apiToken,
             String binaryFilePath,
@@ -61,7 +62,8 @@ public class FiniteStateCLTRecorder extends Recorder {
             Boolean externalizableId,
             Boolean scaEnabled,
             Boolean sastEnabled,
-            Boolean configEnabled) {
+            Boolean configEnabled,
+            Boolean preRelease) {
         this.subdomain = subdomain;
         this.apiToken = apiToken;
         this.binaryFilePath = binaryFilePath;
@@ -72,6 +74,7 @@ public class FiniteStateCLTRecorder extends Recorder {
         this.scaEnabled = scaEnabled;
         this.sastEnabled = sastEnabled;
         this.configEnabled = configEnabled;
+        this.preRelease = preRelease;
     }
 
     public String getSubdomain() {
@@ -112,6 +115,10 @@ public class FiniteStateCLTRecorder extends Recorder {
 
     public boolean getConfigEnabled() {
         return configEnabled != null ? configEnabled : false;
+    }
+
+    public boolean getPreRelease() {
+        return preRelease != null ? preRelease : false;
     }
 
     /**
@@ -186,6 +193,11 @@ public class FiniteStateCLTRecorder extends Recorder {
     @DataBoundSetter
     public void setConfigEnabled(boolean configEnabled) {
         this.configEnabled = configEnabled;
+    }
+
+    @DataBoundSetter
+    public void setPreRelease(boolean preRelease) {
+        this.preRelease = preRelease;
     }
 
     /**
@@ -345,6 +357,7 @@ public class FiniteStateCLTRecorder extends Recorder {
             String projectName,
             String projectVersion,
             String scanTypes,
+            boolean preRelease,
             BuildListener listener)
             throws IOException, InterruptedException {
 
@@ -363,6 +376,10 @@ public class FiniteStateCLTRecorder extends Recorder {
 
         if (scanTypes != null && !scanTypes.trim().isEmpty()) {
             command.add("--upload=" + scanTypes);
+        }
+
+        if (preRelease) {
+            command.add("--pre-release");
         }
 
         listener.getLogger().println("Executing command: " + String.join(" ", command));
@@ -458,7 +475,7 @@ public class FiniteStateCLTRecorder extends Recorder {
         // Execute the CLT
         listener.getLogger().println("Executing Finite State CLT...");
         int exitCode = executeCLT(
-                cltPath, binaryFileObj.getAbsolutePath(), projectName, parsedVersion, finalScanTypes, listener);
+                cltPath, binaryFileObj.getAbsolutePath(), projectName, parsedVersion, finalScanTypes, getPreRelease(), listener);
 
         if (exitCode == 0) {
             build.addAction(new FiniteStateCLTAction(projectName));
@@ -468,7 +485,7 @@ public class FiniteStateCLTRecorder extends Recorder {
         }
     }
 
-    @Symbol("finite-state-clt")
+    @Symbol("finite-state-analyze-binary")
     @Extension
     public static final class DescriptorImpl extends BuildStepDescriptor<Publisher> {
 
@@ -533,7 +550,7 @@ public class FiniteStateCLTRecorder extends Recorder {
 
         @Override
         public String getDisplayName() {
-            return "Finite State CLT Upload";
+            return "Finite State Analyze Binary";
         }
     }
 }

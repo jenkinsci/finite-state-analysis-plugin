@@ -1,6 +1,6 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:c="/lib/credentials" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
-    <st:adjunct includes="io/jenkins/plugins/finitestateclt/FiniteStateCLTRecorder/js/dynamic_events"/>
+    <st:adjunct includes="io/jenkins/plugins/finitestateclt/FiniteStateAnalyzeBinaryRecorder/js/dynamic_events"/>
     <div class="finite-state-clt">    
       <f:entry title="Subdomain" field="subdomain">
         <f:textbox />
@@ -27,6 +27,10 @@
       <f:textbox />
     </f:entry>
   </div>
+  
+  <f:entry title="Pre-Release" field="preRelease" description="Mark this as a pre-release version. Pre-release versions are used for development environments.">
+    <f:checkbox default="false" />
+  </f:entry>
   
   <f:entry title="Scan Types" field="scanTypes" description="Select one or more scans to perform on this binary. Binary SCA is enabled by default.">
     <div class="scan-types-container">
