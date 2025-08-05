@@ -296,6 +296,12 @@ public class FiniteStateThirdPartyImportRecorder extends Recorder {
         
         if (exitCode == 0) {
             build.addAction(new FiniteStateThirdPartyImportAction(projectName));
+            
+            // Display link to scan results
+            String scanUrl = "https://" + subdomain;
+            listener.getLogger().println("✅ Finite State third party import started successfully!");
+            listener.getLogger().println("Access your scan results at: " + scanUrl);
+            
             return true;
         } else {
             return false;

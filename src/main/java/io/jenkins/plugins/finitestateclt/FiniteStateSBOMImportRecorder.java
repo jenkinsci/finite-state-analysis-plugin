@@ -278,6 +278,12 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
         
         if (exitCode == 0) {
             build.addAction(new FiniteStateSBOMImportAction(projectName));
+            
+            // Display link to scan results
+            String scanUrl = "https://" + subdomain;
+            listener.getLogger().println("✅ Finite State SBOM import started successfully!");
+            listener.getLogger().println("Access your scan results at: " + scanUrl);
+            
             return true;
         } else {
             return false;

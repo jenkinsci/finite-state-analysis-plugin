@@ -479,6 +479,12 @@ public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
 
         if (exitCode == 0) {
             build.addAction(new FiniteStateCLTAction(projectName));
+            
+            // Display link to scan results
+            String scanUrl = "https://" + subdomain;
+            listener.getLogger().println("✅ Finite State scan started successfully!");
+            listener.getLogger().println("Access your scan results at: " + scanUrl);
+            
             return true;
         } else {
             return false;
