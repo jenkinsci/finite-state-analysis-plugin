@@ -285,7 +285,38 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
             listener.getLogger().println("Access your scan results at: " + scanUrl);
             
             return true;
+        } else if (exitCode == 1) {
+            build.addAction(new FiniteStateSBOMImportAction(projectName));
+            
+            // Display link to scan results even when vulnerabilities found
+            String scanUrl = "https://" + subdomain;
+            listener.getLogger().println("⚠️ Finite State SBOM import completed with vulnerabilities found.");
+            listener.getLogger().println("Access your scan results at: " + scanUrl);
+            
+            return true;
         } else {
+            // Handle other error codes
+            switch (exitCode) {
+                case 2:
+                    listener.getLogger().println("❌ Failed to connect to FiniteState service. Please check your credentials and subdomain.");
+                    break;
+                case 100:
+                    listener.getLogger().println("❌ Invalid command arguments provided to FiniteState CLT.");
+                    break;
+                case 101:
+                    listener.getLogger().println("❌ Error with command arguments.");
+                    break;
+                case 200:
+                    listener.getLogger().println("❌ Other errors occurred during scan execution.");
+                    break;
+                default:
+                    if (exitCode >= 1000) {
+                        listener.getLogger().println("❌ Tool execution error (exit code: " + exitCode + ").");
+                    } else {
+                        listener.getLogger().println("❌ SBOM import failed with exit code: " + exitCode);
+                    }
+                    break;
+            }
             return false;
         }
     }
