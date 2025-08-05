@@ -43,4 +43,4 @@ public class FiniteStateSBOMImportAction implements RunAction2 {
     public Run getRun() {
         return build;
     }
-} 
+}

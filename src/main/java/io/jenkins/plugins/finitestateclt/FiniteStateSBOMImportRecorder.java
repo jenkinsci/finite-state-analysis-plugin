@@ -145,8 +145,8 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
 
     public String getSecretTextValue(AbstractBuild build, String credentialId) {
         try {
-            StringCredentials credential = CredentialsProvider.findCredentialById(
-                    credentialId, StringCredentials.class, build);
+            StringCredentials credential =
+                    CredentialsProvider.findCredentialById(credentialId, StringCredentials.class, build);
             if (credential != null) {
                 return credential.getSecret().getPlainText();
             }
@@ -159,12 +159,12 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
     private Path getOrDownloadCLT(String cltUrl, String apiToken, BuildListener listener) throws IOException {
         String cltDir = System.getProperty("user.home") + "/.finite-state-clt";
         Path cltPath = Paths.get(cltDir, "finite-state-clt.jar");
-        
+
         if (!Files.exists(cltPath)) {
             Files.createDirectories(Paths.get(cltDir));
             return downloadCLT(cltUrl, apiToken, listener);
         }
-        
+
         return cltPath;
     }
 
@@ -172,20 +172,44 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
         try {
             URL cltUrl = new URL(url);
             java.net.HttpURLConnection connection = (java.net.HttpURLConnection) cltUrl.openConnection();
-            connection.setRequestProperty("Authorization", "Bearer " + apiToken);
-            
+            connection.setRequestProperty("X-Authorization", apiToken);
+            connection.setRequestProperty("User-Agent", "FiniteState-Jenkins-Plugin/1.0");
+
             String cltDir = System.getProperty("user.home") + "/.finite-state-clt";
             Path cltPath = Paths.get(cltDir, "finite-state-clt.jar");
-            
+
+            // Check response code
+            int responseCode = connection.getResponseCode();
+            listener.getLogger().println("HTTP Response Code: " + responseCode);
+
+            if (responseCode != 200) {
+                String errorMessage = "Failed to download CLT. HTTP Response: " + responseCode;
+                try (java.io.BufferedReader reader =
+                        new java.io.BufferedReader(new java.io.InputStreamReader(connection.getErrorStream()))) {
+                    String line;
+                    StringBuilder errorResponse = new StringBuilder();
+                    while ((line = reader.readLine()) != null) {
+                        errorResponse.append(line).append("\n");
+                    }
+                    if (errorResponse.length() > 0) {
+                        errorMessage += "\nError Response: " + errorResponse.toString();
+                    }
+                }
+                throw new IOException(errorMessage);
+            }
+
             try (java.io.InputStream in = connection.getInputStream();
-                 java.io.OutputStream out = Files.newOutputStream(cltPath)) {
+                    java.io.OutputStream out = Files.newOutputStream(cltPath)) {
                 byte[] buffer = new byte[8192];
                 int bytesRead;
+                long totalBytes = 0;
                 while ((bytesRead = in.read(buffer)) != -1) {
                     out.write(buffer, 0, bytesRead);
+                    totalBytes += bytesRead;
                 }
+                listener.getLogger().println("Downloaded " + totalBytes + " bytes");
             }
-            
+
             listener.getLogger().println("CLT downloaded successfully to: " + cltPath);
             return cltPath;
         } catch (Exception e) {
@@ -202,103 +226,104 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
             boolean preRelease,
             BuildListener listener)
             throws IOException, InterruptedException {
-        
+
         List<String> command = new ArrayList<>();
         command.add("java");
         command.add("-jar");
         command.add(cltPath.toString());
         command.add("--import");
+        command.add("--name=" + projectName);
+        command.add("--version=" + projectVersion);
         command.add(sbomFile);
-        command.add("--name");
-        command.add(projectName);
-        command.add("--version");
-        command.add(projectVersion);
 
         if (preRelease) {
             command.add("--pre-release");
         }
-        
+
+        listener.getLogger().println("Executing command: " + String.join(" ", command));
+
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(true);
-        
+
         Process process = pb.start();
-        
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream()))) {
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 listener.getLogger().println(line);
             }
         }
-        
+
         return process.waitFor();
     }
 
     @Override
     public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener)
             throws InterruptedException, IOException {
-        
+
         listener.getLogger().println("Starting Finite State SBOM Import...");
-        
+
         // Get API token from credentials
         String parsedApiToken = getSecretTextValue(build, apiToken);
         if (parsedApiToken == null) {
             listener.getLogger().println("ERROR: Invalid API token credential");
             return false;
         }
-        
+
         // Parse version
         String parsedVersion = projectVersion;
         if (getExternalizableId()) {
             parsedVersion = "build-" + build.getNumber();
         }
-        
+
         listener.getLogger().println("Subdomain: " + subdomain);
         listener.getLogger().println("Project name: " + projectName);
         listener.getLogger().println("SBOM file: " + sbomFilePath);
         if (parsedVersion != null && !parsedVersion.trim().isEmpty()) {
             listener.getLogger().println("Project version: " + parsedVersion);
         }
-        
+
         // Check if CLT already exists, download if not
         String cltUrl = "https://" + subdomain + "/api/config/clt";
         Path cltPath = getOrDownloadCLT(cltUrl, parsedApiToken, listener);
-        
+
         // Verify SBOM file exists
         File sbomFileObj = getFileFromWorkspace(build, sbomFilePath, listener);
         if (sbomFileObj == null || !sbomFileObj.exists()) {
             listener.getLogger().println("ERROR: SBOM file not found: " + sbomFilePath);
             return false;
         }
-        
+
         // Execute the SBOM import
         listener.getLogger().println("Executing Finite State SBOM Import...");
         int exitCode = executeSBOMImport(
                 cltPath, sbomFileObj.getAbsolutePath(), projectName, parsedVersion, getPreRelease(), listener);
-        
+
         if (exitCode == 0) {
             build.addAction(new FiniteStateSBOMImportAction(projectName));
-            
+
             // Display link to scan results
             String scanUrl = "https://" + subdomain;
             listener.getLogger().println("✅ Finite State SBOM import started successfully!");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
-            
+
             return true;
         } else if (exitCode == 1) {
             build.addAction(new FiniteStateSBOMImportAction(projectName));
-            
+
             // Display link to scan results even when vulnerabilities found
             String scanUrl = "https://" + subdomain;
             listener.getLogger().println("⚠️ Finite State SBOM import completed with vulnerabilities found.");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
-            
+
             return true;
         } else {
             // Handle other error codes
             switch (exitCode) {
                 case 2:
-                    listener.getLogger().println("❌ Failed to connect to FiniteState service. Please check your credentials and subdomain.");
+                    listener.getLogger()
+                            .println(
+                                    "❌ Failed to connect to FiniteState service. Please check your credentials and subdomain.");
                     break;
                 case 100:
                     listener.getLogger().println("❌ Invalid command arguments provided to FiniteState CLT.");
@@ -389,4 +414,4 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
             return "Finite State Import SBOM";
         }
     }
-} 
+}

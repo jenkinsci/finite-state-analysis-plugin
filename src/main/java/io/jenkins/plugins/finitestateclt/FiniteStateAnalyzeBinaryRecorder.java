@@ -475,31 +475,39 @@ public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
         // Execute the CLT
         listener.getLogger().println("Executing Finite State CLT...");
         int exitCode = executeCLT(
-                cltPath, binaryFileObj.getAbsolutePath(), projectName, parsedVersion, finalScanTypes, getPreRelease(), listener);
+                cltPath,
+                binaryFileObj.getAbsolutePath(),
+                projectName,
+                parsedVersion,
+                finalScanTypes,
+                getPreRelease(),
+                listener);
 
         if (exitCode == 0) {
             build.addAction(new FiniteStateCLTAction(projectName));
-            
+
             // Display link to scan results
             String scanUrl = "https://" + subdomain;
             listener.getLogger().println("✅ Finite State scan started successfully!");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
-            
+
             return true;
         } else if (exitCode == 1) {
             build.addAction(new FiniteStateCLTAction(projectName));
-            
+
             // Display link to scan results even when vulnerabilities found
             String scanUrl = "https://" + subdomain;
             listener.getLogger().println("⚠️ Finite State scan completed with vulnerabilities found.");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
-            
+
             return true;
         } else {
             // Handle other error codes
             switch (exitCode) {
                 case 2:
-                    listener.getLogger().println("❌ Failed to connect to FiniteState service. Please check your credentials and subdomain.");
+                    listener.getLogger()
+                            .println(
+                                    "❌ Failed to connect to FiniteState service. Please check your credentials and subdomain.");
                     break;
                 case 100:
                     listener.getLogger().println("❌ Invalid command arguments provided to FiniteState CLT.");
