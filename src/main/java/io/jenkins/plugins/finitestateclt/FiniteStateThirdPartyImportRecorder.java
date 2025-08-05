@@ -382,6 +382,10 @@ public class FiniteStateThirdPartyImportRecorder extends Recorder {
                     return items.includeCurrentValue(apiToken);
                 }
             }
+
+            // Add empty option as default
+            items.add("-- Select API Token --", "");
+
             for (StandardCredentials credential : CredentialsProvider.lookupCredentials(
                     StandardCredentials.class, (Item) null, ACL.SYSTEM, Collections.emptyList())) {
                 items.add(credential.getId());
@@ -433,6 +437,9 @@ public class FiniteStateThirdPartyImportRecorder extends Recorder {
         @RequirePOST
         public ListBoxModel doFillScanTypeItems() {
             ListBoxModel items = new ListBoxModel();
+
+            // Add empty option as default
+            items.add("-- Select Scan Type --", "");
 
             // Third-party scanning tools
             items.add("Acunetix360 Scan", "acunetix360_scan");

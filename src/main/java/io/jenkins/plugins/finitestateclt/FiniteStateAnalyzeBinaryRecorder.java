@@ -546,6 +546,10 @@ public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
                     return items.includeCurrentValue(apiToken);
                 }
             }
+
+            // Add empty option as default
+            items.add("-- Select API Token --", "");
+
             for (StandardCredentials credential : CredentialsProvider.lookupCredentials(
                     StandardCredentials.class, (Item) null, ACL.SYSTEM, Collections.emptyList())) {
                 items.add(credential.getId());
