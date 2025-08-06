@@ -20,10 +20,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -156,68 +153,6 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
         return null;
     }
 
-    private Path getOrDownloadCLT(String cltUrl, String apiToken, BuildListener listener) throws IOException {
-        String cltDir = System.getProperty("user.home") + "/.finite-state-clt";
-        Path cltPath = Paths.get(cltDir, "finite-state-clt.jar");
-
-        if (!Files.exists(cltPath)) {
-            Files.createDirectories(Paths.get(cltDir));
-            return downloadCLT(cltUrl, apiToken, listener);
-        }
-
-        return cltPath;
-    }
-
-    private Path downloadCLT(String url, String apiToken, BuildListener listener) throws IOException {
-        try {
-            URL cltUrl = new URL(url);
-            java.net.HttpURLConnection connection = (java.net.HttpURLConnection) cltUrl.openConnection();
-            connection.setRequestProperty("X-Authorization", apiToken);
-            connection.setRequestProperty("User-Agent", "FiniteState-Jenkins-Plugin/1.0");
-
-            String cltDir = System.getProperty("user.home") + "/.finite-state-clt";
-            Path cltPath = Paths.get(cltDir, "finite-state-clt.jar");
-
-            // Check response code
-            int responseCode = connection.getResponseCode();
-            listener.getLogger().println("HTTP Response Code: " + responseCode);
-
-            if (responseCode != 200) {
-                String errorMessage = "Failed to download CLT. HTTP Response: " + responseCode;
-                try (java.io.BufferedReader reader =
-                        new java.io.BufferedReader(new java.io.InputStreamReader(connection.getErrorStream()))) {
-                    String line;
-                    StringBuilder errorResponse = new StringBuilder();
-                    while ((line = reader.readLine()) != null) {
-                        errorResponse.append(line).append("\n");
-                    }
-                    if (errorResponse.length() > 0) {
-                        errorMessage += "\nError Response: " + errorResponse.toString();
-                    }
-                }
-                throw new IOException(errorMessage);
-            }
-
-            try (java.io.InputStream in = connection.getInputStream();
-                    java.io.OutputStream out = Files.newOutputStream(cltPath)) {
-                byte[] buffer = new byte[8192];
-                int bytesRead;
-                long totalBytes = 0;
-                while ((bytesRead = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, bytesRead);
-                    totalBytes += bytesRead;
-                }
-                listener.getLogger().println("Downloaded " + totalBytes + " bytes");
-            }
-
-            listener.getLogger().println("CLT downloaded successfully to: " + cltPath);
-            return cltPath;
-        } catch (Exception e) {
-            listener.getLogger().println("ERROR: Failed to download CLT: " + e.getMessage());
-            throw new IOException("Failed to download CLT", e);
-        }
-    }
-
     private int executeSBOMImport(
             Path cltPath,
             String sbomFile,
@@ -285,7 +220,7 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
 
         // Check if CLT already exists, download if not
         String cltUrl = "https://" + subdomain + "/api/config/clt";
-        Path cltPath = getOrDownloadCLT(cltUrl, parsedApiToken, listener);
+        Path cltPath = CLTManager.getOrDownloadCLT(cltUrl, parsedApiToken, listener);
 
         // Verify SBOM file exists
         File sbomFileObj = getFileFromWorkspace(build, sbomFilePath, listener);

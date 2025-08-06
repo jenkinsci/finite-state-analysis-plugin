@@ -20,10 +20,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -232,123 +229,6 @@ public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
     }
 
     /**
-     * Test if the JAR file is valid and executable
-     */
-    private boolean testJarFile(Path jarPath, BuildListener listener) {
-        try {
-            // Test if we can read the JAR file
-            try (java.util.jar.JarFile jarFile = new java.util.jar.JarFile(jarPath.toFile())) {
-                listener.getLogger().println("JAR file is valid and readable");
-                return true;
-            }
-        } catch (Exception e) {
-            listener.getLogger().println("JAR file validation failed: " + e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Get or download the CLT jar file (Bamboo-style caching and logging)
-     */
-    private Path getOrDownloadCLT(String cltUrl, String apiToken, BuildListener listener) throws IOException {
-        Path cltPath = Paths.get("finitestate-clt.jar");
-
-        // Check if CLT already exists, is executable, and is valid
-        if (cltPath.toFile().exists() && cltPath.toFile().canExecute() && testJarFile(cltPath, listener)) {
-            listener.getLogger().println("CLT already exists at: " + cltPath.toAbsolutePath());
-            return cltPath;
-        }
-
-        // Download the CLT if it doesn't exist
-        listener.getLogger().println("CLT not found, downloading from: " + cltUrl);
-        return downloadCLT(cltUrl, apiToken, listener);
-    }
-
-    /**
-     * Download the CLT jar file
-     */
-    private Path downloadCLT(String url, String apiToken, BuildListener listener) throws IOException {
-        Path cltPath = Paths.get("finitestate-clt.jar");
-
-        listener.getLogger().println("Downloading CLT from: " + url);
-
-        // Create URL connection with authentication
-        java.net.URLConnection connection = new URL(url).openConnection();
-        connection.setRequestProperty("X-Authorization", apiToken);
-        connection.setRequestProperty("User-Agent", "FiniteState-Jenkins-Plugin/1.0");
-
-        // Check response code
-        if (connection instanceof java.net.HttpURLConnection) {
-            java.net.HttpURLConnection httpConnection = (java.net.HttpURLConnection) connection;
-            int responseCode = httpConnection.getResponseCode();
-            listener.getLogger().println("HTTP Response Code: " + responseCode);
-
-            if (responseCode != 200) {
-                String errorMessage = "Failed to download CLT. HTTP Response: " + responseCode;
-                try (java.io.BufferedReader reader =
-                        new java.io.BufferedReader(new java.io.InputStreamReader(httpConnection.getErrorStream()))) {
-                    String line;
-                    StringBuilder errorResponse = new StringBuilder();
-                    while ((line = reader.readLine()) != null) {
-                        errorResponse.append(line).append("\n");
-                    }
-                    if (errorResponse.length() > 0) {
-                        errorMessage += "\nError Response: " + errorResponse.toString();
-                    }
-                }
-                throw new IOException(errorMessage);
-            }
-        }
-
-        // Download the file
-        long totalBytes = 0;
-        try (java.io.InputStream in = connection.getInputStream();
-                java.io.OutputStream out = Files.newOutputStream(cltPath)) {
-
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = in.read(buffer)) != -1) {
-                out.write(buffer, 0, bytesRead);
-                totalBytes += bytesRead;
-            }
-        }
-
-        // Verify the downloaded file
-        if (!cltPath.toFile().exists()) {
-            throw new IOException("Downloaded file does not exist");
-        }
-
-        if (cltPath.toFile().length() == 0) {
-            throw new IOException("Downloaded file is empty");
-        }
-
-        listener.getLogger().println("Downloaded " + totalBytes + " bytes to: " + cltPath.toAbsolutePath());
-        listener.getLogger().println("File size: " + cltPath.toFile().length() + " bytes");
-
-        // Verify it's a valid JAR file by checking the magic number
-        try (java.io.FileInputStream fis = new java.io.FileInputStream(cltPath.toFile())) {
-            byte[] header = new byte[4];
-            if (fis.read(header) == 4) {
-                // JAR files start with PK (0x50 0x4B)
-                if (header[0] == 0x50 && header[1] == 0x4B) {
-                    listener.getLogger().println("JAR file header verified successfully");
-                } else {
-                    listener.getLogger().println("WARNING: File does not appear to be a valid JAR file");
-                    listener.getLogger()
-                            .println("Expected PK header, got: "
-                                    + String.format("%02X %02X %02X %02X", header[0], header[1], header[2], header[3]));
-                }
-            }
-        }
-
-        // Make the file executable
-        cltPath.toFile().setExecutable(true);
-        listener.getLogger().println("CLT downloaded successfully to: " + cltPath.toAbsolutePath());
-
-        return cltPath;
-    }
-
-    /**
      * Execute the CLT command
      */
     private int executeCLT(
@@ -459,7 +339,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
 
         // Check if CLT already exists, download if not
         String cltUrl = "https://" + subdomain + "/api/config/clt";
-        Path cltPath = getOrDownloadCLT(cltUrl, parsedApiToken, listener);
+        Path cltPath = CLTManager.getOrDownloadCLT(cltUrl, parsedApiToken, listener);
 
         // Verify binary file exists
         File binaryFileObj = getFileFromWorkspace(build, binaryFilePath, listener);
