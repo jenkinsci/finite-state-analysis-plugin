@@ -114,7 +114,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
      */
     protected Path getCLTPath(String subdomain, String apiToken, BuildListener listener) throws IOException {
         String cltUrl = "https://" + subdomain + "/api/config/clt";
-        return CLTManager.getOrDownloadCLT(cltUrl, apiToken, listener);
+        return CLTManager.getOrDownloadCLT(cltUrl, apiToken, subdomain, listener);
     }
 
     /**

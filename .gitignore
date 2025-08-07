@@ -13,4 +13,4 @@ work
 .settings
 .classpath
 .project
-finitestate-clt.jar
+finitestate-*.jar

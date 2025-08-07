@@ -59,7 +59,22 @@ public class FiniteStateExecutionFramework {
         recorder.logCommonInfo(build, listener, recorder.getFilePathValue());
 
         // Get CLT path
-        Path cltPath = recorder.getCLTPath(recorder.getSubdomain(), parsedApiToken, listener);
+        Path cltPath;
+        try {
+            cltPath = recorder.getCLTPath(recorder.getSubdomain(), parsedApiToken, listener);
+        } catch (IOException e) {
+            String errorMessage = "ERROR: Failed to download CLT: " + e.getMessage();
+            listener.getLogger().println(errorMessage);
+
+            // Add error to consolidated results
+            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + 
+                                 "\nSubdomain: " + recorder.getSubdomain() + 
+                                 "\nCredential ID: " + recorder.getApiToken();
+            recorder.addConsolidatedResult(build, recorder.getAnalysisType(), recorder.getProjectName(), 
+                                         consoleOutput, "ERROR", "N/A");
+
+            return false;
+        }
 
         // Verify file exists
         File fileObj = recorder.getFileFromWorkspace(build, recorder.getFilePathValue(), listener);

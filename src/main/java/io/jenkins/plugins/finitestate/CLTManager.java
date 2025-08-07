@@ -13,7 +13,8 @@ import java.nio.file.Paths;
  */
 public class CLTManager {
 
-    private static final String CLT_FILENAME = "finitestate-clt.jar";
+    private static final String CLT_FILENAME_PREFIX = "finitestate-clt";
+    private static final String CLT_FILENAME_SUFFIX = ".jar";
     private static final String USER_AGENT = "FiniteState-Jenkins-Plugin/1.0";
 
     /**
@@ -24,16 +25,28 @@ public class CLTManager {
     }
 
     /**
+     * Get the CLT filename for a specific subdomain
+     *
+     * @param subdomain The subdomain to generate filename for
+     * @return The subdomain-specific CLT filename
+     */
+    private static String getCLTFilename(String subdomain) {
+        return CLT_FILENAME_PREFIX + "-" + subdomain + CLT_FILENAME_SUFFIX;
+    }
+
+    /**
      * Get or download the CLT jar file with proper caching and validation.
      *
      * @param cltUrl The URL to download the CLT from
      * @param apiToken The API token for authentication
+     * @param subdomain The subdomain for filename generation
      * @param listener The build listener for logging
      * @return The path to the CLT JAR file
      * @throws IOException if download fails or file is invalid
      */
-    public static Path getOrDownloadCLT(String cltUrl, String apiToken, BuildListener listener) throws IOException {
-        Path cltPath = Paths.get(CLT_FILENAME);
+    public static Path getOrDownloadCLT(String cltUrl, String apiToken, String subdomain, BuildListener listener) throws IOException {
+        String filename = getCLTFilename(subdomain);
+        Path cltPath = Paths.get(filename);
 
         // Check if CLT already exists, is executable, and is valid
         if (cltPath.toFile().exists() && cltPath.toFile().canExecute() && testJarFile(cltPath, listener)) {
@@ -43,7 +56,7 @@ public class CLTManager {
 
         // Download the CLT if it doesn't exist
         listener.getLogger().println("CLT not found, downloading from: " + cltUrl);
-        return downloadCLT(cltUrl, apiToken, listener);
+        return downloadCLT(cltUrl, apiToken, subdomain, listener);
     }
 
     /**
@@ -65,8 +78,9 @@ public class CLTManager {
     /**
      * Download the CLT jar file
      */
-    private static Path downloadCLT(String url, String apiToken, BuildListener listener) throws IOException {
-        Path cltPath = Paths.get(CLT_FILENAME);
+    private static Path downloadCLT(String url, String apiToken, String subdomain, BuildListener listener) throws IOException {
+        String filename = getCLTFilename(subdomain);
+        Path cltPath = Paths.get(filename);
 
         listener.getLogger().println("Downloading CLT from: " + url);
 
@@ -83,17 +97,39 @@ public class CLTManager {
 
             if (responseCode != 200) {
                 String errorMessage = "Failed to download CLT. HTTP Response: " + responseCode;
-                try (java.io.BufferedReader reader =
-                        new java.io.BufferedReader(new java.io.InputStreamReader(httpConnection.getErrorStream()))) {
-                    String line;
-                    StringBuilder errorResponse = new StringBuilder();
-                    while ((line = reader.readLine()) != null) {
-                        errorResponse.append(line).append("\n");
-                    }
-                    if (errorResponse.length() > 0) {
-                        errorMessage += "\nError Response: " + errorResponse.toString();
-                    }
+                
+                // Add specific error messages for common HTTP status codes
+                if (responseCode == 401) {
+                    errorMessage = "Authentication failed (HTTP 401). Please check your API token and ensure it is valid for the specified subdomain.";
+                } else if (responseCode == 403) {
+                    errorMessage = "Access denied (HTTP 403). Please check your API token permissions.";
+                } else if (responseCode == 404) {
+                    errorMessage = "CLT not found (HTTP 404). Please check the subdomain configuration.";
+                } else if (responseCode >= 500) {
+                    errorMessage = "Server error (HTTP " + responseCode + "). Please try again later or contact support.";
                 }
+                
+                // Try to read error response if available
+                try {
+                    java.io.InputStream errorStream = httpConnection.getErrorStream();
+                    if (errorStream != null) {
+                        try (java.io.BufferedReader reader =
+                                new java.io.BufferedReader(new java.io.InputStreamReader(errorStream))) {
+                            String line;
+                            StringBuilder errorResponse = new StringBuilder();
+                            while ((line = reader.readLine()) != null) {
+                                errorResponse.append(line).append("\n");
+                            }
+                            if (errorResponse.length() > 0) {
+                                errorMessage += "\nError Response: " + errorResponse.toString();
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    // If we can't read the error stream, just log it and continue
+                    listener.getLogger().println("Warning: Could not read error response details: " + e.getMessage());
+                }
+                
                 throw new IOException(errorMessage);
             }
         }
