@@ -1,5 +1,5 @@
 // Dynamic events for Finite State Third Party Import Recorder
-function toggleVersionField() {
+function toggleTVersionField() {
     var externalizableIdCheckbox = document.getElementById('thirdExternalizableId');
     var versionDiv = document.getElementById('thirdVersion');
     
@@ -13,12 +13,12 @@ function toggleVersionField() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    toggleVersionField();
+    toggleTVersionField();
     
     // Add event listener to checkbox
     var externalizableIdCheckbox = document.getElementById('thirdExternalizableId');
     if (externalizableIdCheckbox) {
-        externalizableIdCheckbox.addEventListener('change', toggleVersionField);
+        externalizableIdCheckbox.addEventListener('change', toggleTVersionField);
     }
 });
 
@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // your page initialization code here
     // the DOM will be available here
     
-    toggleVersionField();
+    toggleTVersionField();
 })();
 
 // Detect when your plugin is added as a post-build action
@@ -34,6 +34,6 @@ Behaviour.specify(".finite-state-third-party-import", 'my-plugin', 100, function
     // Trigger a custom event when your plugin's fields are loaded
     var externalizableIdCheckbox = document.getElementById("thirdExternalizableId");
     if (externalizableIdCheckbox) {
-        externalizableIdCheckbox.addEventListener("click", toggleVersionField);
+        externalizableIdCheckbox.addEventListener("click", toggleTVersionField);
     }
 }); 

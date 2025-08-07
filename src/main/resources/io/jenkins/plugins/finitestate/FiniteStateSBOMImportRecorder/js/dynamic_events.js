@@ -1,8 +1,7 @@
 // Dynamic events for Finite State SBOM Import Recorder
-function toggleVersionField() {
+function toggleSbomVersionField() {
     var externalizableIdCheckbox = document.getElementById('sbomExternalizableId');
     var versionDiv = document.getElementById('sbomVersion');
-    
     if (externalizableIdCheckbox && versionDiv) {
         if (externalizableIdCheckbox.checked) {
             versionDiv.style.display = 'none';
@@ -13,12 +12,12 @@ function toggleVersionField() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    toggleVersionField();
+    toggleSbomVersionField();
     
     // Add event listener to checkbox
     var externalizableIdCheckbox = document.getElementById('sbomExternalizableId');
     if (externalizableIdCheckbox) {
-        externalizableIdCheckbox.addEventListener('change', toggleVersionField);
+        externalizableIdCheckbox.addEventListener('change', toggleSbomVersionField);
     }
 });
 
@@ -26,14 +25,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // your page initialization code here
     // the DOM will be available here
     
-    toggleVersionField();
+    toggleSbomVersionField();
 })();
 
 // Detect when your plugin is added as a post-build action
-Behaviour.specify(".finite-state-sbom-import", 'my-plugin', 100, function (element) {
+Behaviour.specify(".finite-state-sbom-import", 'my-plugin', 200, function (element) {
     // Trigger a custom event when your plugin's fields are loaded
     var externalizableIdCheckbox = document.getElementById("sbomExternalizableId");
     if (externalizableIdCheckbox) {
-        externalizableIdCheckbox.addEventListener("click", toggleVersionField);
+        externalizableIdCheckbox.addEventListener("click", toggleSbomVersionField);
     }
 }); 
