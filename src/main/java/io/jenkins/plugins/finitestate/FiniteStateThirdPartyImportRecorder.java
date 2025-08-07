@@ -28,7 +28,7 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
     private String scanType;
 
     @DataBoundConstructor
-    public FiniteStateThirdPartyImportRecorderRefactored(
+    public FiniteStateThirdPartyImportRecorder(
             String subdomain,
             String apiToken,
             String scanFilePath,

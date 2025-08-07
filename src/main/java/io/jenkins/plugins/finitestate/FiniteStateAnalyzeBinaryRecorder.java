@@ -31,7 +31,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     private Boolean configEnabled;
 
     @DataBoundConstructor
-    public FiniteStateAnalyzeBinaryRecorderRefactored(
+    public FiniteStateAnalyzeBinaryRecorder(
             String subdomain,
             String apiToken,
             String binaryFilePath,
