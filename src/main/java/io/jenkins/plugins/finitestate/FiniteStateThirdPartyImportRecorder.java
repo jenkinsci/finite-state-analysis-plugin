@@ -22,7 +22,7 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
 /**
  * Refactored Third Party Import Recorder that extends the base class to reduce code duplication.
  */
-public class FiniteStateThirdPartyImportRecorderRefactored extends BaseFiniteStateRecorder {
+public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder {
 
     private String scanFilePath;
     private String scanType;

@@ -22,7 +22,7 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
  * Refactored SBOM Import Recorder that extends the base class to reduce code duplication.
  * This demonstrates how the new base classes can be used to eliminate repetitive code.
  */
-public class FiniteStateSBOMImportRecorderNew extends BaseFiniteStateRecorder {
+public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
 
     private String sbomFilePath;
 

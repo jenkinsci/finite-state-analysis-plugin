@@ -22,7 +22,7 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
  * Refactored Binary Analysis Recorder that extends the base class to reduce code duplication.
  * This demonstrates how the new base classes can be used to eliminate repetitive code.
  */
-public class FiniteStateAnalyzeBinaryRecorderRefactored extends BaseFiniteStateRecorder {
+public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
 
     private String binaryFilePath;
     private String scanTypes;
