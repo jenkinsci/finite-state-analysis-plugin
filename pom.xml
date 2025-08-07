@@ -10,12 +10,12 @@
   </parent>
 
   <groupId>io.jenkins.plugins</groupId>
-  <artifactId>finite-state-clt</artifactId>
+  <artifactId>finite-state</artifactId>
   <version>${changelist}</version>
   <packaging>hpi</packaging>
 
-  <name>Finite State CLT</name>
-  <description>Jenkins plugin for Finite State security scanning using CLT tool</description>
+  <name>Finite State</name>
+  <description>Jenkins plugin for Finite State security scanning</description>
   <url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
   <licenses>
     <license>

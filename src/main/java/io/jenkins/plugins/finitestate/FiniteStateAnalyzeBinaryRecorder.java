@@ -1,4 +1,4 @@
-package io.jenkins.plugins.finitestateclt;
+package io.jenkins.plugins.finitestate;
 
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardCredentials;
@@ -34,31 +34,43 @@ import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.interceptor.RequirePOST;
 
-public class FiniteStateSBOMImportRecorder extends Recorder {
+public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
 
     private String subdomain;
     private String apiToken;
-    private String sbomFilePath;
+    private String binaryFilePath;
     private String projectName;
     private String projectVersion;
+    private String scanTypes;
     private Boolean externalizableId;
+    private Boolean scaEnabled;
+    private Boolean sastEnabled;
+    private Boolean configEnabled;
     private Boolean preRelease;
 
     @DataBoundConstructor
-    public FiniteStateSBOMImportRecorder(
+    public FiniteStateAnalyzeBinaryRecorder(
             String subdomain,
             String apiToken,
-            String sbomFilePath,
+            String binaryFilePath,
             String projectName,
             String projectVersion,
+            String scanTypes,
             Boolean externalizableId,
+            Boolean scaEnabled,
+            Boolean sastEnabled,
+            Boolean configEnabled,
             Boolean preRelease) {
         this.subdomain = subdomain;
         this.apiToken = apiToken;
-        this.sbomFilePath = sbomFilePath;
+        this.binaryFilePath = binaryFilePath;
         this.projectName = projectName;
         this.projectVersion = projectVersion;
+        this.scanTypes = scanTypes;
         this.externalizableId = externalizableId;
+        this.scaEnabled = scaEnabled;
+        this.sastEnabled = sastEnabled;
+        this.configEnabled = configEnabled;
         this.preRelease = preRelease;
     }
 
@@ -70,8 +82,8 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
         return apiToken;
     }
 
-    public String getSbomFilePath() {
-        return sbomFilePath;
+    public String getBinaryFilePath() {
+        return binaryFilePath;
     }
 
     public String getProjectName() {
@@ -82,12 +94,52 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
         return projectVersion;
     }
 
+    public String getScanTypes() {
+        return scanTypes;
+    }
+
     public boolean getExternalizableId() {
-        return externalizableId != null ? externalizableId : true;
+        return externalizableId != null ? externalizableId : false;
+    }
+
+    public boolean getScaEnabled() {
+        return scaEnabled != null ? scaEnabled : true; // Default to true as it's required
+    }
+
+    public boolean getSastEnabled() {
+        return sastEnabled != null ? sastEnabled : false;
+    }
+
+    public boolean getConfigEnabled() {
+        return configEnabled != null ? configEnabled : false;
     }
 
     public boolean getPreRelease() {
         return preRelease != null ? preRelease : false;
+    }
+
+    /**
+     * Convert checkbox values to scan types string format
+     */
+    private String buildScanTypesString() {
+        List<String> selectedScans = new ArrayList<>();
+
+        if (getScaEnabled()) {
+            selectedScans.add("sca");
+        }
+        if (getSastEnabled()) {
+            selectedScans.add("sast");
+        }
+        if (getConfigEnabled()) {
+            selectedScans.add("config");
+        }
+
+        // If no scans are selected, default to sca (required)
+        if (selectedScans.isEmpty()) {
+            selectedScans.add("sca");
+        }
+
+        return String.join(",", selectedScans);
     }
 
     @DataBoundSetter
@@ -101,8 +153,8 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
     }
 
     @DataBoundSetter
-    public void setSbomFilePath(String sbomFilePath) {
-        this.sbomFilePath = sbomFilePath;
+    public void setBinaryFilePath(String binaryFilePath) {
+        this.binaryFilePath = binaryFilePath;
     }
 
     @DataBoundSetter
@@ -116,8 +168,28 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
     }
 
     @DataBoundSetter
+    public void setScanTypes(String scanTypes) {
+        this.scanTypes = scanTypes;
+    }
+
+    @DataBoundSetter
     public void setExternalizableId(boolean externalizableId) {
         this.externalizableId = externalizableId;
+    }
+
+    @DataBoundSetter
+    public void setScaEnabled(boolean scaEnabled) {
+        this.scaEnabled = scaEnabled;
+    }
+
+    @DataBoundSetter
+    public void setSastEnabled(boolean sastEnabled) {
+        this.sastEnabled = sastEnabled;
+    }
+
+    @DataBoundSetter
+    public void setConfigEnabled(boolean configEnabled) {
+        this.configEnabled = configEnabled;
     }
 
     @DataBoundSetter
@@ -125,51 +197,66 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
         this.preRelease = preRelease;
     }
 
+    /**
+     * Get file from workspace with proper path resolution
+     */
     private File getFileFromWorkspace(AbstractBuild build, String relativeFilePath, BuildListener listener) {
-        try {
-            FilePath workspace = build.getWorkspace();
-            if (workspace == null) {
-                listener.getLogger().println("ERROR: Workspace is null");
-                return null;
-            }
-            FilePath filePath = workspace.child(relativeFilePath);
-            return new File(filePath.getRemote());
-        } catch (Exception e) {
-            listener.getLogger().println("ERROR: Failed to resolve file path: " + e.getMessage());
-            return null;
+        // Get the workspace directory for the current build
+        FilePath workspace = build.getWorkspace();
+        if (workspace != null) {
+            String workspaceRemote = workspace.getRemote();
+            // Construct the absolute path to the file
+            File file = new File(workspaceRemote, relativeFilePath);
+            listener.getLogger().println("Looking for file at: " + file.getAbsolutePath());
+            return file;
         }
+        listener.getLogger().println("ERROR: Could not determine workspace path");
+        return null;
     }
 
+    /**
+     * Get secret values from credentials
+     */
     public String getSecretTextValue(AbstractBuild build, String credentialId) {
-        try {
-            StringCredentials credential =
-                    CredentialsProvider.findCredentialById(credentialId, StringCredentials.class, build);
-            if (credential != null) {
-                return credential.getSecret().getPlainText();
-            }
-        } catch (Exception e) {
-            // Log error but continue
+        StandardCredentials credentials =
+                CredentialsProvider.findCredentialById(credentialId, StringCredentials.class, build);
+
+        if (credentials instanceof StringCredentials) {
+            StringCredentials stringCredentials = (StringCredentials) credentials;
+            return stringCredentials.getSecret().getPlainText();
         }
         return null;
     }
 
-    private int executeSBOMImport(
+    /**
+     * Execute the CLT command
+     */
+    private int executeCLT(
             Path cltPath,
-            String sbomFile,
+            String binaryFile,
             String projectName,
             String projectVersion,
+            String scanTypes,
             boolean preRelease,
             BuildListener listener)
             throws IOException, InterruptedException {
 
+        // Build the command
         List<String> command = new ArrayList<>();
         command.add("java");
         command.add("-jar");
         command.add(cltPath.toString());
-        command.add("--import");
+        command.add("--upload");
+        command.add(binaryFile);
         command.add("--name=" + projectName);
-        command.add("--version=" + projectVersion);
-        command.add(sbomFile);
+
+        if (projectVersion != null && !projectVersion.trim().isEmpty()) {
+            command.add("--version=" + projectVersion);
+        }
+
+        if (scanTypes != null && !scanTypes.trim().isEmpty()) {
+            command.add("--upload=" + scanTypes);
+        }
 
         if (preRelease) {
             command.add("--pre-release");
@@ -177,78 +264,120 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
 
         listener.getLogger().println("Executing command: " + String.join(" ", command));
 
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.redirectErrorStream(true);
+        // Execute the process
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        processBuilder.redirectErrorStream(true);
 
-        Process process = pb.start();
+        Process process = processBuilder.start();
 
+        // Read output and look for URL
+        String uploadUrl = null;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 listener.getLogger().println(line);
+                // Look for URL in the output
+                if (line.contains("https://") && line.contains("finitestate.io")) {
+                    uploadUrl = line.trim();
+                }
             }
         }
 
-        return process.waitFor();
+        int exitCode = process.waitFor();
+
+        if (exitCode == 0 && uploadUrl != null) {
+            listener.getLogger().println("Finite State scan started successfully");
+            listener.getLogger().println("Upload URL: " + uploadUrl);
+        } else if (exitCode != 0) {
+            listener.getLogger().println("Finite State scan failed with exit code: " + exitCode);
+        }
+
+        return exitCode;
     }
 
     @Override
     public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener)
             throws InterruptedException, IOException {
 
-        listener.getLogger().println("Starting Finite State SBOM Import...");
+        listener.getLogger().println("Starting Finite State CLT upload...");
 
-        // Get API token from credentials
-        String parsedApiToken = getSecretTextValue(build, apiToken);
-        if (parsedApiToken == null) {
-            listener.getLogger().println("ERROR: Invalid API token credential");
+        // Validate required fields
+        if (subdomain == null || subdomain.trim().isEmpty()) {
+            listener.getLogger().println("ERROR: Subdomain is required");
+            return false;
+        }
+        if (apiToken == null || apiToken.trim().isEmpty()) {
+            listener.getLogger().println("ERROR: API Token is required");
+            return false;
+        }
+        if (binaryFilePath == null || binaryFilePath.trim().isEmpty()) {
+            listener.getLogger().println("ERROR: Binary file path is required");
+            return false;
+        }
+        if (projectName == null || projectName.trim().isEmpty()) {
+            listener.getLogger().println("ERROR: Project name is required");
             return false;
         }
 
-        // Parse version
-        String parsedVersion = projectVersion;
-        if (getExternalizableId()) {
-            parsedVersion = "build-" + build.getNumber();
+        // Get credentials
+        String parsedApiToken = getSecretTextValue(build, apiToken);
+        if (parsedApiToken == null) {
+            listener.getLogger().println("ERROR: Could not retrieve API token from credentials");
+            return false;
         }
 
         listener.getLogger().println("Subdomain: " + subdomain);
-        listener.getLogger().println("Project name: " + projectName);
-        listener.getLogger().println("SBOM file: " + sbomFilePath);
+        String parsedVersion = getExternalizableId() ? build.getExternalizableId() : projectVersion;
+        listener.getLogger().println("Project: " + projectName);
+        listener.getLogger().println("Binary file: " + binaryFilePath);
         if (parsedVersion != null && !parsedVersion.trim().isEmpty()) {
             listener.getLogger().println("Project version: " + parsedVersion);
+        }
+        if (scanTypes != null && !scanTypes.trim().isEmpty()) {
+            listener.getLogger().println("Scan types: " + scanTypes);
         }
 
         // Check if CLT already exists, download if not
         String cltUrl = "https://" + subdomain + "/api/config/clt";
         Path cltPath = CLTManager.getOrDownloadCLT(cltUrl, parsedApiToken, listener);
 
-        // Verify SBOM file exists
-        File sbomFileObj = getFileFromWorkspace(build, sbomFilePath, listener);
-        if (sbomFileObj == null || !sbomFileObj.exists()) {
-            listener.getLogger().println("ERROR: SBOM file not found: " + sbomFilePath);
+        // Verify binary file exists
+        File binaryFileObj = getFileFromWorkspace(build, binaryFilePath, listener);
+        if (binaryFileObj == null || !binaryFileObj.exists()) {
+            listener.getLogger().println("ERROR: Binary file not found: " + binaryFilePath);
             return false;
         }
 
-        // Execute the SBOM import
-        listener.getLogger().println("Executing Finite State SBOM Import...");
-        int exitCode = executeSBOMImport(
-                cltPath, sbomFileObj.getAbsolutePath(), projectName, parsedVersion, getPreRelease(), listener);
+        // Build scan types string from checkboxes
+        String finalScanTypes = buildScanTypesString();
+        listener.getLogger().println("Selected scan types: " + finalScanTypes);
+
+        // Execute the CLT
+        listener.getLogger().println("Executing Finite State CLT...");
+        int exitCode = executeCLT(
+                cltPath,
+                binaryFileObj.getAbsolutePath(),
+                projectName,
+                parsedVersion,
+                finalScanTypes,
+                getPreRelease(),
+                listener);
 
         if (exitCode == 0) {
-            build.addAction(new FiniteStateSBOMImportAction(projectName));
+            build.addAction(new FiniteStateCLTAction(projectName));
 
             // Display link to scan results
             String scanUrl = "https://" + subdomain;
-            listener.getLogger().println("✅ Finite State SBOM import started successfully!");
+            listener.getLogger().println("✅ Finite State scan started successfully!");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
 
             return true;
         } else if (exitCode == 1) {
-            build.addAction(new FiniteStateSBOMImportAction(projectName));
+            build.addAction(new FiniteStateCLTAction(projectName));
 
             // Display link to scan results even when vulnerabilities found
             String scanUrl = "https://" + subdomain;
-            listener.getLogger().println("⚠️ Finite State SBOM import completed with vulnerabilities found.");
+            listener.getLogger().println("⚠️ Finite State scan completed with vulnerabilities found.");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
 
             return true;
@@ -273,7 +402,7 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
                     if (exitCode >= 1000) {
                         listener.getLogger().println("❌ Tool execution error (exit code: " + exitCode + ").");
                     } else {
-                        listener.getLogger().println("❌ SBOM import failed with exit code: " + exitCode);
+                        listener.getLogger().println("❌ Scan failed with exit code: " + exitCode);
                     }
                     break;
             }
@@ -281,7 +410,7 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
         }
     }
 
-    @Symbol("finite-state-import-sbom")
+    @Symbol("finite-state-analyze-binary")
     @Extension
     public static final class DescriptorImpl extends BuildStepDescriptor<Publisher> {
 
@@ -335,7 +464,7 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
 
         @RequirePOST
         // lgtm[jenkins/no-permission-check]
-        public FormValidation doCheckSbomFilePath(@AncestorInPath Item item, @QueryParameter String value)
+        public FormValidation doCheckBinaryFilePath(@AncestorInPath Item item, @QueryParameter String value)
                 throws IOException, ServletException {
             return checkRequiredValue(item, value);
         }
@@ -354,7 +483,7 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
 
         @Override
         public String getDisplayName() {
-            return "Finite State Import SBOM";
+            return "Finite State Analyze Binary";
         }
     }
 }

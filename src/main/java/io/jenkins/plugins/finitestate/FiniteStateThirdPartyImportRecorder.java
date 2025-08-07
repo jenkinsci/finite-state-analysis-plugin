@@ -1,4 +1,4 @@
-package io.jenkins.plugins.finitestateclt;
+package io.jenkins.plugins.finitestate;
 
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardCredentials;

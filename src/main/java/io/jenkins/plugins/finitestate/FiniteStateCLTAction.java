@@ -1,4 +1,4 @@
-package io.jenkins.plugins.finitestateclt;
+package io.jenkins.plugins.finitestate;
 
 import hudson.model.Run;
 import jenkins.model.RunAction2;

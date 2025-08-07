@@ -1,13 +1,13 @@
-package io.jenkins.plugins.finitestateclt;
+package io.jenkins.plugins.finitestate;
 
 import hudson.model.Run;
 import jenkins.model.RunAction2;
 
-public class FiniteStateSBOMImportAction implements RunAction2 {
+public class FiniteStateThirdPartyImportAction implements RunAction2 {
     private transient Run build;
     private String projectName;
 
-    public FiniteStateSBOMImportAction(String projectName) {
+    public FiniteStateThirdPartyImportAction(String projectName) {
         this.projectName = projectName;
     }
 
@@ -22,12 +22,12 @@ public class FiniteStateSBOMImportAction implements RunAction2 {
 
     @Override
     public String getDisplayName() {
-        return "Finite State SBOM Import";
+        return "Finite State Third Party Import";
     }
 
     @Override
     public String getUrlName() {
-        return "finite_state_sbom_import";
+        return "finite_state_third_party_import";
     }
 
     @Override

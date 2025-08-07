@@ -1,4 +1,4 @@
-package io.jenkins.plugins.finitestateclt;
+package io.jenkins.plugins.finitestate;
 
 import static org.junit.Assert.*;
 

@@ -1,4 +1,4 @@
-package io.jenkins.plugins.finitestateclt;
+package io.jenkins.plugins.finitestate;
 
 import hudson.model.BuildListener;
 import java.io.IOException;

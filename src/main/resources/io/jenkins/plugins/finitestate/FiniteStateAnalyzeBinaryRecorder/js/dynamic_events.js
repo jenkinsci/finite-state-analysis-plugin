@@ -32,7 +32,7 @@ document.addEventListener("DOMContentLoaded", function() {
 })();
 
 // Detect when your plugin is added as a post-build action
-Behaviour.specify(".finite-state-clt", 'my-plugin', 100, function (element) {
+Behaviour.specify(".finite-state", 'my-plugin', 100, function (element) {
     // Trigger a custom event when your plugin's fields are loaded
     var externalizableIdCheckbox = document.getElementById("externalizableId");
     if (externalizableIdCheckbox) {
