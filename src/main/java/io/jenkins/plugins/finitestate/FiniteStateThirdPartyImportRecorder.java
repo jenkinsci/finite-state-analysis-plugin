@@ -228,7 +228,7 @@ public class FiniteStateThirdPartyImportRecorder extends Recorder {
         // Parse version
         String parsedVersion = projectVersion;
         if (getExternalizableId()) {
-            parsedVersion = "build-" + build.getNumber();
+            parsedVersion = projectName + "#" + build.getNumber();
         }
 
         listener.getLogger().println("Subdomain: " + subdomain);
