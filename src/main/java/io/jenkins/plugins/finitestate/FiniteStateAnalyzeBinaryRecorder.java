@@ -65,7 +65,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     }
 
     public boolean getScaEnabled() {
-        return scaEnabled != null ? scaEnabled : false;
+        return scaEnabled != null ? scaEnabled : true; // Default to true as it's required
     }
 
     public boolean getSastEnabled() {
@@ -146,6 +146,11 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
             selectedTypes.add("config");
         }
         
+        // If no scans are selected, default to sca (required)
+        if (selectedTypes.isEmpty()) {
+            selectedTypes.add("sca");
+        }
+        
         return String.join(",", selectedTypes);
     }
 
@@ -176,7 +181,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
         }
 
         if (scanTypes != null && !scanTypes.trim().isEmpty()) {
-            command.add("--scan-types=" + scanTypes);
+            command.add("--upload=" + scanTypes);
         }
 
         if (preRelease) {
@@ -228,7 +233,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
 
         @Override
         public String getDisplayName() {
-            return "Finite State Binary Analysis";
+            return "Finite State Analyze Binary";
         }
     }
 }

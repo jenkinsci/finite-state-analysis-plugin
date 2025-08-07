@@ -46,7 +46,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
     }
 
     public boolean getExternalizableId() {
-        return externalizableId != null ? externalizableId : true;
+        return externalizableId != null ? externalizableId : false;
     }
 
     public boolean getPreRelease() {

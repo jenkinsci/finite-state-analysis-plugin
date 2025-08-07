@@ -98,13 +98,10 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
         command.add("java");
         command.add("-jar");
         command.add(cltPath.toString());
-        command.add("--import-sbom");
-        command.add(sbomFile);
+        command.add("--import");
         command.add("--name=" + projectName);
-
-        if (projectVersion != null && !projectVersion.trim().isEmpty()) {
-            command.add("--version=" + projectVersion);
-        }
+        command.add("--version=" + projectVersion);
+        command.add(sbomFile);
 
         if (preRelease) {
             command.add("--pre-release");
@@ -141,7 +138,7 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
 
         @Override
         public String getDisplayName() {
-            return "Finite State SBOM Import";
+            return "Finite State Import SBOM";
         }
     }
 }
