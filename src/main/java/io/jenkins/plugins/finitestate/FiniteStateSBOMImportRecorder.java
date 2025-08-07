@@ -201,7 +201,14 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
         // Get API token from credentials
         String parsedApiToken = getSecretTextValue(build, apiToken);
         if (parsedApiToken == null) {
-            listener.getLogger().println("ERROR: Invalid API token credential");
+            String errorMessage = "ERROR: Invalid API token credential";
+            listener.getLogger().println(errorMessage);
+
+            // Add error to consolidated results
+            String consoleOutput = errorMessage + "\nProject: " + projectName + "\nCredential ID: " + apiToken;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("SBOM Import", projectName, consoleOutput, "ERROR", "N/A");
+
             return false;
         }
 
@@ -225,7 +232,14 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
         // Verify SBOM file exists
         File sbomFileObj = getFileFromWorkspace(build, sbomFilePath, listener);
         if (sbomFileObj == null || !sbomFileObj.exists()) {
-            listener.getLogger().println("ERROR: SBOM file not found: " + sbomFilePath);
+            String errorMessage = "ERROR: SBOM file not found: " + sbomFilePath;
+            listener.getLogger().println(errorMessage);
+
+            // Add error to consolidated results
+            String consoleOutput = errorMessage + "\nProject: " + projectName + "\nSBOM File: " + sbomFilePath;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("SBOM Import", projectName, consoleOutput, "ERROR", "N/A");
+
             return false;
         }
 
@@ -235,48 +249,84 @@ public class FiniteStateSBOMImportRecorder extends Recorder {
                 cltPath, sbomFileObj.getAbsolutePath(), projectName, parsedVersion, getPreRelease(), listener);
 
         if (exitCode == 0) {
-            build.addAction(new FiniteStateSBOMImportAction(projectName));
+            // Capture console output for display
+            String consoleOutput =
+                    "✅ Finite State SBOM import started successfully!\n" + "Access your scan results at: https://"
+                            + subdomain + "\n" + "Project: "
+                            + projectName + "\n" + "SBOM File: "
+                            + sbomFilePath + "\n" + "Project Version: "
+                            + parsedVersion + "\n" + "Exit Code: "
+                            + exitCode;
+
+            String scanUrl = "https://" + subdomain;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("SBOM Import", projectName, consoleOutput, "SUCCESS", scanUrl);
 
             // Display link to scan results
-            String scanUrl = "https://" + subdomain;
             listener.getLogger().println("✅ Finite State SBOM import started successfully!");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
 
             return true;
         } else if (exitCode == 1) {
-            build.addAction(new FiniteStateSBOMImportAction(projectName));
+            // Capture console output for display
+            String consoleOutput = "⚠️ Finite State SBOM import completed with vulnerabilities found.\n"
+                    + "Access your scan results at: https://"
+                    + subdomain + "\n" + "Project: "
+                    + projectName + "\n" + "SBOM File: "
+                    + sbomFilePath + "\n" + "Project Version: "
+                    + parsedVersion + "\n" + "Exit Code: "
+                    + exitCode;
+
+            String scanUrl = "https://" + subdomain;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("SBOM Import", projectName, consoleOutput, "WARNING", scanUrl);
 
             // Display link to scan results even when vulnerabilities found
-            String scanUrl = "https://" + subdomain;
             listener.getLogger().println("⚠️ Finite State SBOM import completed with vulnerabilities found.");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
 
             return true;
         } else {
+            // Capture console output for error cases too
+            String consoleOutput = "❌ Finite State SBOM import failed with exit code: " + exitCode + "\n" + "Project: "
+                    + projectName + "\n" + "SBOM File: "
+                    + sbomFilePath + "\n" + "Project Version: "
+                    + parsedVersion + "\n" + "Error Details: ";
+
             // Handle other error codes
             switch (exitCode) {
                 case 2:
                     listener.getLogger()
                             .println(
                                     "❌ Failed to connect to FiniteState service. Please check your credentials and subdomain.");
+                    consoleOutput +=
+                            "Failed to connect to FiniteState service. Please check your credentials and subdomain.";
                     break;
                 case 100:
                     listener.getLogger().println("❌ Invalid command arguments provided to FiniteState CLT.");
+                    consoleOutput += "Invalid command arguments provided to FiniteState CLT.";
                     break;
                 case 101:
                     listener.getLogger().println("❌ Error with command arguments.");
+                    consoleOutput += "Error with command arguments.";
                     break;
                 case 200:
                     listener.getLogger().println("❌ Other errors occurred during scan execution.");
+                    consoleOutput += "Other errors occurred during scan execution.";
                     break;
                 default:
                     if (exitCode >= 1000) {
                         listener.getLogger().println("❌ Tool execution error (exit code: " + exitCode + ").");
+                        consoleOutput += "Tool execution error (exit code: " + exitCode + ").";
                     } else {
                         listener.getLogger().println("❌ SBOM import failed with exit code: " + exitCode);
+                        consoleOutput += "SBOM import failed with exit code: " + exitCode;
                     }
                     break;
             }
+
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("SBOM Import", projectName, consoleOutput, "ERROR", "N/A");
             return false;
         }
     }

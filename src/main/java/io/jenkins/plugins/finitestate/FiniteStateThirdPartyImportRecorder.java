@@ -214,7 +214,14 @@ public class FiniteStateThirdPartyImportRecorder extends Recorder {
         // Get API token from credentials
         String parsedApiToken = getSecretTextValue(build, apiToken);
         if (parsedApiToken == null) {
-            listener.getLogger().println("ERROR: Invalid API token credential");
+            String errorMessage = "ERROR: Invalid API token credential";
+            listener.getLogger().println(errorMessage);
+
+            // Add error to consolidated results
+            String consoleOutput = errorMessage + "\nProject: " + projectName + "\nCredential ID: " + apiToken;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Third Party Import", projectName, consoleOutput, "ERROR", "N/A");
+
             return false;
         }
 
@@ -239,7 +246,14 @@ public class FiniteStateThirdPartyImportRecorder extends Recorder {
         // Verify scan file exists
         File scanFileObj = getFileFromWorkspace(build, scanFilePath, listener);
         if (scanFileObj == null || !scanFileObj.exists()) {
-            listener.getLogger().println("ERROR: Scan file not found: " + scanFilePath);
+            String errorMessage = "ERROR: Scan file not found: " + scanFilePath;
+            listener.getLogger().println(errorMessage);
+
+            // Add error to consolidated results
+            String consoleOutput = errorMessage + "\nProject: " + projectName + "\nScan File: " + scanFilePath;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Third Party Import", projectName, consoleOutput, "ERROR", "N/A");
+
             return false;
         }
 
@@ -257,8 +271,21 @@ public class FiniteStateThirdPartyImportRecorder extends Recorder {
         if (exitCode == 0) {
             build.addAction(new FiniteStateThirdPartyImportAction(projectName));
 
-            // Display link to scan results
+            // Capture console output for display
+            String consoleOutput = "✅ Finite State third party import started successfully.\n"
+                    + "Access your scan results at: https://"
+                    + subdomain + "\n" + "Project: "
+                    + projectName + "\n" + "Scan File: "
+                    + scanFilePath + "\n" + "Scan Type: "
+                    + scanType + "\n" + "Project Version: "
+                    + parsedVersion + "\n" + "Exit Code: "
+                    + exitCode;
+
             String scanUrl = "https://" + subdomain;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Third Party Import", projectName, consoleOutput, "SUCCESS", scanUrl);
+
+            // Display link to scan results
             listener.getLogger().println("✅ Finite State third party import started successfully!");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
 
@@ -266,37 +293,68 @@ public class FiniteStateThirdPartyImportRecorder extends Recorder {
         } else if (exitCode == 1) {
             build.addAction(new FiniteStateThirdPartyImportAction(projectName));
 
-            // Display link to scan results even when vulnerabilities found
+            // Capture console output for display
+            String consoleOutput = "⚠️ Finite State third party import completed with vulnerabilities found.\n"
+                    + "Access your scan results at: https://"
+                    + subdomain + "\n" + "Project: "
+                    + projectName + "\n" + "Scan File: "
+                    + scanFilePath + "\n" + "Scan Type: "
+                    + scanType + "\n" + "Project Version: "
+                    + parsedVersion + "\n" + "Exit Code: "
+                    + exitCode;
+
             String scanUrl = "https://" + subdomain;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Third Party Import", projectName, consoleOutput, "WARNING", scanUrl);
+
+            // Display link to scan results even when vulnerabilities found
             listener.getLogger().println("⚠️ Finite State third party import completed with vulnerabilities found.");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
 
             return true;
         } else {
+            // Capture console output for error cases too
+            String consoleOutput =
+                    "❌ Finite State third party import failed with exit code: " + exitCode + "\n" + "Project: "
+                            + projectName + "\n" + "Scan File: "
+                            + scanFilePath + "\n" + "Scan Type: "
+                            + scanType + "\n" + "Project Version: "
+                            + parsedVersion + "\n" + "Error Details: ";
+
             // Handle other error codes
             switch (exitCode) {
                 case 2:
                     listener.getLogger()
                             .println(
                                     "❌ Failed to connect to FiniteState service. Please check your credentials and subdomain.");
+                    consoleOutput +=
+                            "Failed to connect to FiniteState service. Please check your credentials and subdomain.";
                     break;
                 case 100:
                     listener.getLogger().println("❌ Invalid command arguments provided to FiniteState CLT.");
+                    consoleOutput += "Invalid command arguments provided to FiniteState CLT.";
                     break;
                 case 101:
                     listener.getLogger().println("❌ Error with command arguments.");
+                    consoleOutput += "Error with command arguments.";
                     break;
                 case 200:
                     listener.getLogger().println("❌ Other errors occurred during scan execution.");
+                    consoleOutput += "Other errors occurred during scan execution.";
                     break;
                 default:
                     if (exitCode >= 1000) {
                         listener.getLogger().println("❌ Tool execution error (exit code: " + exitCode + ").");
+                        consoleOutput += "Tool execution error (exit code: " + exitCode + ").";
                     } else {
                         listener.getLogger().println("❌ Third party import failed with exit code: " + exitCode);
+                        consoleOutput += "Third party import failed with exit code: " + exitCode;
                     }
                     break;
             }
+
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Third Party Import", projectName, consoleOutput, "ERROR", "N/A");
             return false;
         }
     }

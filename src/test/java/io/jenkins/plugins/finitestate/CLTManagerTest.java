@@ -22,8 +22,9 @@ public class CLTManagerTest {
         try {
             CLTManager.class.getDeclaredConstructor();
             // If we get here, the constructor exists but we need to check if it's private
-            assertTrue("CLTManager constructor should be private", 
-                CLTManager.class.getDeclaredConstructor().getModifiers() == java.lang.reflect.Modifier.PRIVATE);
+            assertTrue(
+                    "CLTManager constructor should be private",
+                    CLTManager.class.getDeclaredConstructor().getModifiers() == java.lang.reflect.Modifier.PRIVATE);
         } catch (NoSuchMethodException e) {
             fail("CLTManager should have a private constructor");
         }

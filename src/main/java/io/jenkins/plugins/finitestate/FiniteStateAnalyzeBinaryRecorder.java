@@ -322,7 +322,14 @@ public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
         // Get credentials
         String parsedApiToken = getSecretTextValue(build, apiToken);
         if (parsedApiToken == null) {
-            listener.getLogger().println("ERROR: Could not retrieve API token from credentials");
+            String errorMessage = "ERROR: Could not retrieve API token from credentials";
+            listener.getLogger().println(errorMessage);
+
+            // Add error to consolidated results
+            String consoleOutput = errorMessage + "\nProject: " + projectName + "\nCredential ID: " + apiToken;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Binary Analysis", projectName, consoleOutput, "ERROR", "N/A");
+
             return false;
         }
 
@@ -344,7 +351,14 @@ public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
         // Verify binary file exists
         File binaryFileObj = getFileFromWorkspace(build, binaryFilePath, listener);
         if (binaryFileObj == null || !binaryFileObj.exists()) {
-            listener.getLogger().println("ERROR: Binary file not found: " + binaryFilePath);
+            String errorMessage = "ERROR: Binary file not found: " + binaryFilePath;
+            listener.getLogger().println(errorMessage);
+
+            // Add error to consolidated results
+            String consoleOutput = errorMessage + "\nProject: " + projectName + "\nBinary File: " + binaryFilePath;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Binary Analysis", projectName, consoleOutput, "ERROR", "N/A");
+
             return false;
         }
 
@@ -364,48 +378,84 @@ public class FiniteStateAnalyzeBinaryRecorder extends Recorder {
                 listener);
 
         if (exitCode == 0) {
-            build.addAction(new FiniteStateCLTAction(projectName));
+            // Capture console output for display
+            String actualScanTypes = buildScanTypesString();
+            String consoleOutput =
+                    "✅ Finite State scan started successfully!\n" + "Access your scan results at: https://"
+                            + subdomain + "\n" + "Project: "
+                            + projectName + "\n" + "Scan Types: "
+                            + actualScanTypes + "\n" + "Exit Code: "
+                            + exitCode;
+
+            String scanUrl = "https://" + subdomain;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Binary Analysis", projectName, consoleOutput, "SUCCESS", scanUrl);
 
             // Display link to scan results
-            String scanUrl = "https://" + subdomain;
             listener.getLogger().println("✅ Finite State scan started successfully!");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
 
             return true;
         } else if (exitCode == 1) {
-            build.addAction(new FiniteStateCLTAction(projectName));
+            // Capture console output for display
+            String actualScanTypes = buildScanTypesString();
+            String consoleOutput = "⚠️ Finite State scan completed with vulnerabilities found.\n"
+                    + "Access your scan results at: https://"
+                    + subdomain + "\n" + "Project: "
+                    + projectName + "\n" + "Scan Types: "
+                    + actualScanTypes + "\n" + "Exit Code: "
+                    + exitCode;
+
+            String scanUrl = "https://" + subdomain;
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Binary Analysis", projectName, consoleOutput, "WARNING", scanUrl);
 
             // Display link to scan results even when vulnerabilities found
-            String scanUrl = "https://" + subdomain;
             listener.getLogger().println("⚠️ Finite State scan completed with vulnerabilities found.");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
 
             return true;
         } else {
+            // Capture console output for error cases too
+            String actualScanTypes = buildScanTypesString();
+            String consoleOutput = "❌ Finite State scan failed with exit code: " + exitCode + "\n" + "Project: "
+                    + projectName + "\n" + "Scan Types: "
+                    + actualScanTypes + "\n" + "Error Details: ";
+
             // Handle other error codes
             switch (exitCode) {
                 case 2:
                     listener.getLogger()
                             .println(
                                     "❌ Failed to connect to FiniteState service. Please check your credentials and subdomain.");
+                    consoleOutput +=
+                            "Failed to connect to FiniteState service. Please check your credentials and subdomain.";
                     break;
                 case 100:
                     listener.getLogger().println("❌ Invalid command arguments provided to FiniteState CLT.");
+                    consoleOutput += "Invalid command arguments provided to FiniteState CLT.";
                     break;
                 case 101:
                     listener.getLogger().println("❌ Error with command arguments.");
+                    consoleOutput += "Error with command arguments.";
                     break;
                 case 200:
                     listener.getLogger().println("❌ Other errors occurred during scan execution.");
+                    consoleOutput += "Other errors occurred during scan execution.";
                     break;
                 default:
                     if (exitCode >= 1000) {
                         listener.getLogger().println("❌ Tool execution error (exit code: " + exitCode + ").");
+                        consoleOutput += "Tool execution error (exit code: " + exitCode + ").";
                     } else {
                         listener.getLogger().println("❌ Scan failed with exit code: " + exitCode);
+                        consoleOutput += "Scan failed with exit code: " + exitCode;
                     }
                     break;
             }
+
+            FiniteStateConsolidatedResultsAction.getOrCreate(build)
+                    .addResult("Binary Analysis", projectName, consoleOutput, "ERROR", "N/A");
             return false;
         }
     }

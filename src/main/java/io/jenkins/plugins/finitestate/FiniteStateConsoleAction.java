@@ -1,24 +1,25 @@
 package io.jenkins.plugins.finitestate;
 
 import hudson.model.Run;
+import java.io.Serializable;
 import jenkins.model.RunAction2;
 
-public class FiniteStateCLTAction implements RunAction2 {
+public class FiniteStateConsoleAction implements RunAction2, Serializable {
     private transient Run build;
-    private String projectName;
-    private String consoleOutput; // Add console output storage
+    private String consoleOutput;
+    private String title;
+    private String iconName;
 
-    public FiniteStateCLTAction(String projectName) {
-        this.projectName = projectName;
-    }
-
-    public FiniteStateCLTAction(String projectName, String consoleOutput) {
-        this.projectName = projectName;
+    public FiniteStateConsoleAction(String title, String consoleOutput) {
+        this.title = title;
         this.consoleOutput = consoleOutput;
+        this.iconName = "notepad.png";
     }
 
-    public String getProjectName() {
-        return projectName;
+    public FiniteStateConsoleAction(String title, String consoleOutput, String iconName) {
+        this.title = title;
+        this.consoleOutput = consoleOutput;
+        this.iconName = iconName;
     }
 
     public String getConsoleOutput() {
@@ -29,19 +30,23 @@ public class FiniteStateCLTAction implements RunAction2 {
         this.consoleOutput = consoleOutput;
     }
 
+    public String getTitle() {
+        return title;
+    }
+
     @Override
     public String getIconFileName() {
-        return "notepad.png";
+        return iconName;
     }
 
     @Override
     public String getDisplayName() {
-        return "Finite State Analysis";
+        return title;
     }
 
     @Override
     public String getUrlName() {
-        return "finite_state_analysis";
+        return "finite_state_console";
     }
 
     @Override
