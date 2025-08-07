@@ -1,11 +1,11 @@
-# [Finite State](https://finitestate.io) Jenkins Plugin
+# [Finite State Analysis](https://finitestate.io) Jenkins Plugin
 
 ![Finite state logo](FS-Logo.png)
 [finitestate.io](https://finitestate.io)
 
 ## Introduction
 
-The Finite State Jenkins Plugin provides multiple post-build actions for integrating with the Finite State platform using the Finite State CLT (Command Line Tool).
+The Finite State Analysis Jenkins Plugin provides multiple post-build actions for integrating with the Finite State platform using the Finite State CLT (Command Line Tool).
 
 This plugin gives you the ability to add Post Build actions for:
 
