@@ -10,12 +10,12 @@
   </parent>
 
   <groupId>io.jenkins.plugins</groupId>
-  <artifactId>finite-state</artifactId>
+  <artifactId>finite-state-analysis</artifactId>
   <version>${changelist}</version>
   <packaging>hpi</packaging>
 
-  <name>Finite State</name>
-  <description>Jenkins plugin for Finite State security scanning</description>
+  <name>Finite State Analysis</name>
+  <description>Jenkins plugin for Finite State Analysis security scanning</description>
   <url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
   <licenses>
     <license>
