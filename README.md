@@ -31,7 +31,8 @@ To use this plugin, follow the following steps:
    - `Finite State - Analyze Binary`
    - `Finite State - Import SBOM`
    - `Finite State - Import 3rd Party Scan`
-4. Complete the fields following the below reference. For sensitive fields like `Subdomain` and `API Token`, we use the credentials plugin, so be sure to create the credentials for each of these fields and select the correct ones on each dropdown.
+4. **Generate an API Token**: You need to generate an API token from your Finite State instance. Navigate to your Finite State domain (e.g., if your domain is `fs-yolo.finitestate.io`, go to https://fs-yolo.finitestate.io/settings/api-tokens) and generate a new API token. This token will be used to authenticate with the Finite State platform.
+5. Complete the fields following the below reference. For sensitive fields like `API Token`, we use the credentials plugin, so be sure to create the text credential for this field and select the correct one on the dropdown.
 
 ## Post-Build Actions
 
