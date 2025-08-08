@@ -59,7 +59,6 @@
         </label>
       </div>
     </div>
-    <f:description>Selected scan types will be automatically converted to the required format (e.g., sca,sast,config)</f:description>
   </f:entry>
 </div>
 </j:jelly> 
