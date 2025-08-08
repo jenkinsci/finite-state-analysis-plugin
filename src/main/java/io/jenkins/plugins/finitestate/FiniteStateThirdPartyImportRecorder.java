@@ -147,11 +147,13 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
     public static final class DescriptorImpl extends BaseFiniteStateDescriptor {
 
         @RequirePOST
+        // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckScanFilePath(@QueryParameter String value) throws IOException, ServletException {
             return checkRequiredValue(null, value);
         }
 
         @RequirePOST
+        // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckScanType(@QueryParameter String value) throws IOException, ServletException {
             return checkRequiredValue(null, value);
         }

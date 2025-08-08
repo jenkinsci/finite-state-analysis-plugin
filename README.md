@@ -128,9 +128,19 @@ For the complete list of supported tools and their expected file formats, refer 
 
 ## Requirements
 
-- Jenkins 2.440.3 or later
+- Jenkins 2.479.3 or later
 - Java 8 or later (for running the CLT)
 - Internet access to download the CLT from your Finite State instance
+
+## Version Compatibility
+
+This plugin is built with:
+- **Plugin Parent Version**: 5.9
+- **Jenkins Baseline**: 2.479
+- **Jenkins Version**: 2.479.3
+- **BOM Version**: 3814.v9563d972079a_
+
+The plugin is compatible with Jenkins LTS versions 2.479.3 and later. For the latest compatibility information, refer to the [Jenkins Plugin Compatibility Matrix](https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/).
 
 ## Security
 
