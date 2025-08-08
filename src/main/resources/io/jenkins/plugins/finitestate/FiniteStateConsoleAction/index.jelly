@@ -1,0 +1,7 @@
+<?jelly escape-by-default='true'?>
+<div>
+    <h2>${it.title}</h2>
+    <div style="background-color: #f5f5f5; border: 1px solid #ddd; padding: 10px; font-family: monospace; white-space: pre-wrap; max-height: 400px; overflow-y: auto;">
+        ${it.consoleOutput}
+    </div>
+</div> 
