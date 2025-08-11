@@ -1,6 +1,6 @@
 package io.jenkins.plugins.finitestate;
 
-import hudson.model.BuildListener;
+import hudson.model.TaskListener;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -45,7 +45,7 @@ public class CLTManager {
      * @return The path to the CLT JAR file
      * @throws IOException if download fails or file is invalid
      */
-    public static Path getOrDownloadCLT(String cltUrl, String apiToken, String subdomain, BuildListener listener)
+    public static Path getOrDownloadCLT(String cltUrl, String apiToken, String subdomain, TaskListener listener)
             throws IOException {
         String filename = getCLTFilename(subdomain);
         Path cltPath = Paths.get(filename);
@@ -64,7 +64,7 @@ public class CLTManager {
     /**
      * Test if the JAR file is valid and executable
      */
-    private static boolean testJarFile(Path jarPath, BuildListener listener) {
+    private static boolean testJarFile(Path jarPath, TaskListener listener) {
         try {
             // Test if we can read the JAR file
             try (java.util.jar.JarFile jarFile = new java.util.jar.JarFile(jarPath.toFile())) {
@@ -80,7 +80,7 @@ public class CLTManager {
     /**
      * Download the CLT jar file
      */
-    private static Path downloadCLT(String url, String apiToken, String subdomain, BuildListener listener)
+    private static Path downloadCLT(String url, String apiToken, String subdomain, TaskListener listener)
             throws IOException {
         String filename = getCLTFilename(subdomain);
         Path cltPath = Paths.get(filename);

@@ -4,6 +4,7 @@ import hudson.Extension;
 import hudson.Launcher;
 import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
+import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -26,43 +27,21 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
 public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
 
     private String binaryFilePath;
-    private String scanTypes;
     private Boolean scaEnabled;
     private Boolean sastEnabled;
     private Boolean configEnabled;
 
     @DataBoundConstructor
     public FiniteStateAnalyzeBinaryRecorder(
-            String subdomain,
-            String apiToken,
-            String binaryFilePath,
-            String projectName,
-            String projectVersion,
-            String scanTypes,
-            Boolean externalizableId,
-            Boolean scaEnabled,
-            Boolean sastEnabled,
-            Boolean configEnabled,
-            Boolean preRelease) {
+            String subdomain, String apiToken, String binaryFilePath, String projectName) {
         this.subdomain = subdomain;
         this.apiToken = apiToken;
         this.binaryFilePath = binaryFilePath;
         this.projectName = projectName;
-        this.projectVersion = projectVersion;
-        this.scanTypes = scanTypes;
-        this.externalizableId = externalizableId;
-        this.scaEnabled = scaEnabled;
-        this.sastEnabled = sastEnabled;
-        this.configEnabled = configEnabled;
-        this.preRelease = preRelease;
     }
 
     public String getBinaryFilePath() {
         return binaryFilePath;
-    }
-
-    public String getScanTypes() {
-        return scanTypes;
     }
 
     public boolean getScaEnabled() {
@@ -80,11 +59,6 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     @DataBoundSetter
     public void setBinaryFilePath(String binaryFilePath) {
         this.binaryFilePath = binaryFilePath;
-    }
-
-    @DataBoundSetter
-    public void setScanTypes(String scanTypes) {
-        this.scanTypes = scanTypes;
     }
 
     @DataBoundSetter
@@ -110,7 +84,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
 
     @Override
     protected int executeAnalysis(
-            Path cltPath, String filePath, String projectName, String projectVersion, BuildListener listener)
+            Path cltPath, String filePath, String projectName, String projectVersion, TaskListener listener)
             throws IOException, InterruptedException {
         return executeCLT(
                 cltPath, filePath, projectName, projectVersion, buildScanTypesString(), getPreRelease(), listener);
@@ -165,7 +139,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
             String projectVersion,
             String scanTypes,
             boolean preRelease,
-            BuildListener listener)
+            TaskListener listener)
             throws IOException, InterruptedException {
 
         // Build the command
@@ -177,12 +151,13 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
         command.add(binaryFile);
         command.add("--name=" + projectName);
 
-        if (projectVersion != null && !projectVersion.trim().isEmpty()) {
+        if (projectVersion != null && !projectVersion.isBlank()) {
             command.add("--version=" + projectVersion);
         }
 
-        if (scanTypes != null && !scanTypes.trim().isEmpty()) {
-            command.add("--upload=" + scanTypes);
+        String computedScanTypes = buildScanTypesString();
+        if (computedScanTypes != null && !computedScanTypes.isBlank()) {
+            command.add("--upload=" + computedScanTypes);
         }
 
         if (preRelease) {
@@ -223,14 +198,14 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
         return exitCode;
     }
 
-    @Symbol("finite-state-analyze-binary")
+    @Symbol("finiteStateAnalyzeBinary")
     @Extension
     public static final class DescriptorImpl extends BaseFiniteStateDescriptor {
 
         @RequirePOST
         // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckBinaryFilePath(@QueryParameter String value) throws IOException, ServletException {
-            return checkRequiredValue(null, value);
+            return checkRequiredValue(value);
         }
 
         @Override

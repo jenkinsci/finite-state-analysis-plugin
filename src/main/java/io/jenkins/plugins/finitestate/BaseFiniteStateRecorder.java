@@ -3,19 +3,24 @@ package io.jenkins.plugins.finitestate;
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardCredentials;
 import hudson.FilePath;
+import hudson.Launcher;
 import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
+import hudson.model.Run;
+import hudson.model.TaskListener;
 import hudson.tasks.Recorder;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import jenkins.tasks.SimpleBuildStep;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
+import org.kohsuke.stapler.DataBoundSetter;
 
 /**
  * Abstract base class for all Finite State recorders.
  * Contains common functionality shared across different analysis types.
  */
-public abstract class BaseFiniteStateRecorder extends Recorder {
+public abstract class BaseFiniteStateRecorder extends Recorder implements SimpleBuildStep {
 
     protected String subdomain;
     protected String apiToken;
@@ -66,27 +71,35 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
         this.projectName = projectName;
     }
 
+    @DataBoundSetter
     public void setProjectVersion(String projectVersion) {
         this.projectVersion = projectVersion;
     }
 
+    @DataBoundSetter
     public void setExternalizableId(boolean externalizableId) {
         this.externalizableId = externalizableId;
     }
 
+    @DataBoundSetter
     public void setPreRelease(boolean preRelease) {
         this.preRelease = preRelease;
     }
 
     /**
-     * Get file from workspace - common utility method
+     * Get file from workspace - common utility method (freestyle builds)
      */
     protected File getFileFromWorkspace(AbstractBuild build, String relativeFilePath, BuildListener listener) {
-        // Get the workspace directory for the current build
         FilePath workspace = build.getWorkspace();
+        return getFileFromWorkspace(workspace, relativeFilePath, (TaskListener) listener);
+    }
+
+    /**
+     * Get file from workspace - common utility method (pipeline and freestyle)
+     */
+    protected File getFileFromWorkspace(FilePath workspace, String relativeFilePath, TaskListener listener) {
         if (workspace != null) {
             String workspaceRemote = workspace.getRemote();
-            // Construct the absolute path to the file
             File file = new File(workspaceRemote, relativeFilePath);
             listener.getLogger().println("Looking for file at: " + file.getAbsolutePath());
             return file;
@@ -96,11 +109,18 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
     }
 
     /**
-     * Get secret values from credentials - common utility method
+     * Get secret values from credentials - common utility method (freestyle builds)
      */
     protected String getSecretTextValue(AbstractBuild build, String credentialId) {
+        return getSecretTextValue((Run<?, ?>) build, credentialId);
+    }
+
+    /**
+     * Get secret values from credentials - common utility method (pipeline and freestyle)
+     */
+    protected String getSecretTextValue(Run<?, ?> run, String credentialId) {
         StandardCredentials credentials =
-                CredentialsProvider.findCredentialById(credentialId, StringCredentials.class, build);
+                CredentialsProvider.findCredentialById(credentialId, StringCredentials.class, run);
 
         if (credentials instanceof StringCredentials) {
             StringCredentials stringCredentials = (StringCredentials) credentials;
@@ -112,7 +132,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
     /**
      * Get CLT path using the shared CLTManager
      */
-    protected Path getCLTPath(String subdomain, String apiToken, BuildListener listener) throws IOException {
+    protected Path getCLTPath(String subdomain, String apiToken, TaskListener listener) throws IOException {
         String cltUrl = "https://" + subdomain + "/api/config/clt";
         return CLTManager.getOrDownloadCLT(cltUrl, apiToken, subdomain, listener);
     }
@@ -120,9 +140,9 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
     /**
      * Parse version based on externalizableId setting
      */
-    protected String parseVersion(AbstractBuild build, String projectVersion) {
+    protected String parseVersion(Run<?, ?> run, String projectVersion) {
         if (getExternalizableId()) {
-            return build.getExternalizableId();
+            return run.getExternalizableId();
         }
         return projectVersion;
     }
@@ -130,7 +150,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
     /**
      * Validate common required fields
      */
-    protected boolean validateCommonFields(BuildListener listener) {
+    protected boolean validateCommonFields(TaskListener listener) {
         if (subdomain == null || subdomain.trim().isEmpty()) {
             listener.getLogger().println("ERROR: Subdomain is required");
             return false;
@@ -149,14 +169,14 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
     /**
      * Log common information
      */
-    protected void logCommonInfo(AbstractBuild build, BuildListener listener, String filePath) {
+    protected void logCommonInfo(Run<?, ?> run, TaskListener listener, String filePath) {
         listener.getLogger().println("Subdomain: " + subdomain);
         listener.getLogger().println("Project: " + projectName);
         if (filePath != null) {
             listener.getLogger().println("File: " + filePath);
         }
 
-        String parsedVersion = parseVersion(build, projectVersion);
+        String parsedVersion = parseVersion(run, projectVersion);
         if (parsedVersion != null && !parsedVersion.trim().isEmpty()) {
             listener.getLogger().println("Project version: " + parsedVersion);
         }
@@ -166,13 +186,8 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
      * Add result to consolidated results action
      */
     protected void addConsolidatedResult(
-            AbstractBuild build,
-            String analysisType,
-            String projectName,
-            String consoleOutput,
-            String status,
-            String url) {
-        FiniteStateConsolidatedResultsAction.getOrCreate(build)
+            Run<?, ?> run, String analysisType, String projectName, String consoleOutput, String status, String url) {
+        FiniteStateConsolidatedResultsAction.getOrCreate(run)
                 .addResult(analysisType, projectName, consoleOutput, status, url);
     }
 
@@ -180,7 +195,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
      * Abstract method for executing the specific analysis
      */
     protected abstract int executeAnalysis(
-            Path cltPath, String filePath, String projectName, String projectVersion, BuildListener listener)
+            Path cltPath, String filePath, String projectName, String projectVersion, TaskListener listener)
             throws IOException, InterruptedException;
 
     /**
@@ -197,4 +212,16 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
      * Get the file path value
      */
     protected abstract String getFilePathValue();
+
+    /**
+     * Pipeline entry point (and also supported in freestyle). Marks build as failed on error.
+     */
+    @Override
+    public void perform(Run<?, ?> run, FilePath workspace, Launcher launcher, TaskListener listener)
+            throws InterruptedException, IOException {
+        boolean ok = FiniteStateExecutionFramework.executeAnalysis(this, run, workspace, launcher, listener);
+        if (!ok) {
+            throw new hudson.AbortException("Finite State analysis failed");
+        }
+    }
 }

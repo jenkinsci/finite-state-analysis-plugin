@@ -1,8 +1,11 @@
 package io.jenkins.plugins.finitestate;
 
+import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
+import hudson.model.Run;
+import hudson.model.TaskListener;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -27,7 +30,11 @@ public class FiniteStateExecutionFramework {
      * @return true if successful, false otherwise
      */
     public static boolean executeAnalysis(
-            BaseFiniteStateRecorder recorder, AbstractBuild build, Launcher launcher, BuildListener listener)
+            BaseFiniteStateRecorder recorder,
+            Run<?, ?> run,
+            FilePath workspace,
+            Launcher launcher,
+            TaskListener listener)
             throws InterruptedException, IOException {
 
         listener.getLogger().println("Starting Finite State " + recorder.getAnalysisType() + "...");
@@ -38,7 +45,7 @@ public class FiniteStateExecutionFramework {
         }
 
         // Get API token from credentials
-        String parsedApiToken = recorder.getSecretTextValue(build, recorder.getApiToken());
+        String parsedApiToken = recorder.getSecretTextValue(run, recorder.getApiToken());
         if (parsedApiToken == null) {
             String errorMessage = "ERROR: Could not retrieve API token from credentials";
             listener.getLogger().println(errorMessage);
@@ -47,16 +54,16 @@ public class FiniteStateExecutionFramework {
             String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\nCredential ID: "
                     + recorder.getApiToken();
             recorder.addConsolidatedResult(
-                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
+                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 
             return false;
         }
 
         // Parse version
-        String parsedVersion = recorder.parseVersion(build, recorder.getProjectVersion());
+        String parsedVersion = recorder.parseVersion(run, recorder.getProjectVersion());
 
         // Log common information
-        recorder.logCommonInfo(build, listener, recorder.getFilePathValue());
+        recorder.logCommonInfo(run, listener, recorder.getFilePathValue());
 
         // Get CLT path
         Path cltPath;
@@ -71,13 +78,13 @@ public class FiniteStateExecutionFramework {
                     + recorder.getSubdomain() + "\nCredential ID: "
                     + recorder.getApiToken();
             recorder.addConsolidatedResult(
-                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
+                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 
             return false;
         }
 
         // Verify file exists
-        File fileObj = recorder.getFileFromWorkspace(build, recorder.getFilePathValue(), listener);
+        File fileObj = recorder.getFileFromWorkspace(workspace, recorder.getFilePathValue(), listener);
         if (fileObj == null || !fileObj.exists()) {
             String errorMessage =
                     "ERROR: " + recorder.getFilePathFieldName() + " not found: " + recorder.getFilePathValue();
@@ -87,7 +94,7 @@ public class FiniteStateExecutionFramework {
             String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\n"
                     + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue();
             recorder.addConsolidatedResult(
-                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
+                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 
             return false;
         }
@@ -97,7 +104,17 @@ public class FiniteStateExecutionFramework {
         int exitCode = recorder.executeAnalysis(
                 cltPath, fileObj.getAbsolutePath(), recorder.getProjectName(), parsedVersion, listener);
 
-        return handleExitCode(recorder, build, listener, exitCode, parsedVersion);
+        return handleExitCode(recorder, run, listener, exitCode, parsedVersion);
+    }
+
+    /**
+     * Backward-compatible shim for freestyle builds using AbstractBuild API.
+     */
+    public static boolean executeAnalysis(
+            BaseFiniteStateRecorder recorder, AbstractBuild build, Launcher launcher, BuildListener listener)
+            throws InterruptedException, IOException {
+        FilePath workspace = build.getWorkspace();
+        return executeAnalysis(recorder, (Run<?, ?>) build, workspace, launcher, (TaskListener) listener);
     }
 
     /**
@@ -105,8 +122,8 @@ public class FiniteStateExecutionFramework {
      */
     private static boolean handleExitCode(
             BaseFiniteStateRecorder recorder,
-            AbstractBuild build,
-            BuildListener listener,
+            Run<?, ?> run,
+            TaskListener listener,
             int exitCode,
             String parsedVersion) {
 
@@ -116,7 +133,7 @@ public class FiniteStateExecutionFramework {
             // Success case
             String consoleOutput = buildSuccessMessage(recorder, parsedVersion, exitCode);
             recorder.addConsolidatedResult(
-                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "SUCCESS", scanUrl);
+                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "SUCCESS", scanUrl);
 
             listener.getLogger().println("✅ Finite State " + recorder.getAnalysisType() + " started successfully!");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
@@ -126,7 +143,7 @@ public class FiniteStateExecutionFramework {
             // Warning case - vulnerabilities found but scan completed
             String consoleOutput = buildWarningMessage(recorder, parsedVersion, exitCode);
             recorder.addConsolidatedResult(
-                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "WARNING", scanUrl);
+                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "WARNING", scanUrl);
 
             listener.getLogger()
                     .println(
@@ -138,7 +155,7 @@ public class FiniteStateExecutionFramework {
             // Error case
             String consoleOutput = buildErrorMessage(recorder, parsedVersion, exitCode);
             recorder.addConsolidatedResult(
-                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
+                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 
             listener.getLogger()
                     .println("❌ Finite State " + recorder.getAnalysisType() + " failed with exit code: " + exitCode);

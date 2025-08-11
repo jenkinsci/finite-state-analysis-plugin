@@ -29,7 +29,7 @@
     </f:entry>
   </div>
   
-  <f:entry title="Scan Types" field="scanTypes" description="Select one or more scans to perform on this binary. Binary SCA is enabled by default.">
+  <f:entry title="Scan Types" description="Select one or more scans to perform on this binary. Binary SCA is enabled by default.">
     <div class="scan-types-container">
       <div class="scan-type-option">
         <f:checkbox name="scaEnabled" field="scaEnabled" default="true" />
