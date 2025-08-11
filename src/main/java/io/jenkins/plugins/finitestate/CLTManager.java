@@ -3,6 +3,7 @@ package io.jenkins.plugins.finitestate;
 import hudson.model.BuildListener;
 import java.io.IOException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -44,7 +45,8 @@ public class CLTManager {
      * @return The path to the CLT JAR file
      * @throws IOException if download fails or file is invalid
      */
-    public static Path getOrDownloadCLT(String cltUrl, String apiToken, String subdomain, BuildListener listener) throws IOException {
+    public static Path getOrDownloadCLT(String cltUrl, String apiToken, String subdomain, BuildListener listener)
+            throws IOException {
         String filename = getCLTFilename(subdomain);
         Path cltPath = Paths.get(filename);
 
@@ -78,7 +80,8 @@ public class CLTManager {
     /**
      * Download the CLT jar file
      */
-    private static Path downloadCLT(String url, String apiToken, String subdomain, BuildListener listener) throws IOException {
+    private static Path downloadCLT(String url, String apiToken, String subdomain, BuildListener listener)
+            throws IOException {
         String filename = getCLTFilename(subdomain);
         Path cltPath = Paths.get(filename);
 
@@ -97,24 +100,26 @@ public class CLTManager {
 
             if (responseCode != 200) {
                 String errorMessage = "Failed to download CLT. HTTP Response: " + responseCode;
-                
+
                 // Add specific error messages for common HTTP status codes
                 if (responseCode == 401) {
-                    errorMessage = "Authentication failed (HTTP 401). Please check your API token and ensure it is valid for the specified subdomain.";
+                    errorMessage =
+                            "Authentication failed (HTTP 401). Please check your API token and ensure it is valid for the specified subdomain.";
                 } else if (responseCode == 403) {
                     errorMessage = "Access denied (HTTP 403). Please check your API token permissions.";
                 } else if (responseCode == 404) {
                     errorMessage = "CLT not found (HTTP 404). Please check the subdomain configuration.";
                 } else if (responseCode >= 500) {
-                    errorMessage = "Server error (HTTP " + responseCode + "). Please try again later or contact support.";
+                    errorMessage =
+                            "Server error (HTTP " + responseCode + "). Please try again later or contact support.";
                 }
-                
+
                 // Try to read error response if available
                 try {
                     java.io.InputStream errorStream = httpConnection.getErrorStream();
                     if (errorStream != null) {
-                        try (java.io.BufferedReader reader =
-                                new java.io.BufferedReader(new java.io.InputStreamReader(errorStream))) {
+                        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                                new java.io.InputStreamReader(errorStream, StandardCharsets.UTF_8))) {
                             String line;
                             StringBuilder errorResponse = new StringBuilder();
                             while ((line = reader.readLine()) != null) {
@@ -129,7 +134,7 @@ public class CLTManager {
                     // If we can't read the error stream, just log it and continue
                     listener.getLogger().println("Warning: Could not read error response details: " + e.getMessage());
                 }
-                
+
                 throw new IOException(errorMessage);
             }
         }

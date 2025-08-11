@@ -3,7 +3,7 @@
 ### Setting up the project to run in maven locally to develop
 To work with the project locally and run it with a Jenkins server, follow these steps:
 
-Make sure to have java-21 and maven insatalled in your local machine
+Make sure to have Java 21 installed. Maven is optional because this repo includes the Maven Wrapper (recommended).
 
 ```
 # content of maven.sh file
@@ -14,10 +14,28 @@ export MAVEN_HOME=/opt/maven
 export PATH=${M2_HOME}/bin:${PATH}
 ```
 
+#### Using the Maven Wrapper (recommended)
+Parent 5.9 requires Maven >= 3.9.6. The wrapper in this repo is pinned to a compatible Maven (3.9.9), so you don’t need a system Maven.
+
+- Linux/macOS:
+```
+./mvnw -U clean verify
+```
+- Windows (PowerShell/CMD):
+```
+./mvnw.cmd -U clean verify
+```
+
+You can use the wrapper for all build and run commands below.
+
 1. Run Jenkins server locally with the plugin being deployed:
 ```
-source /etc/profile.d/maven.sh 
-mvn hpi:run -Dport=5025 
+# Recommended (uses the Maven Wrapper)
+./mvnw hpi:run -Dport=5025
+
+# Alternatively, with system Maven (ensure Maven >= 3.9.6)
+# source /etc/profile.d/maven.sh
+# mvn hpi:run -Dport=5025
 ```
 > Enter https://localhost:5025/jenkins in your browser
 
@@ -29,12 +47,12 @@ mvn hpi:run -Dport=5025
 
 * Build the project:
 ```
-mvn clean install
+./mvnw clean install
 ```
 
 * Generate the `hpi` file:
 ```
-mvn hpi:hpi
+./mvnw hpi:hpi
 ```
 
 The generated `hpi` file can be found in the `target` folder of your project directory.

@@ -31,7 +31,8 @@ To use this plugin, follow the following steps:
    - `Finite State - Analyze Binary`
    - `Finite State - Import SBOM`
    - `Finite State - Import 3rd Party Scan`
-4. Complete the fields following the below reference. For sensitive fields like `Subdomain` and `API Token`, we use the credentials plugin, so be sure to create the credentials for each of these fields and select the correct ones on each dropdown.
+4. **Generate an API Token**: You need to generate an API token from your Finite State instance. Navigate to your Finite State domain (e.g., if your domain is `fs-yolo.finitestate.io`, go to https://fs-yolo.finitestate.io/settings/api-tokens) and generate a new API token. This token will be used to authenticate with the Finite State platform.
+5. Complete the fields following the below reference. For sensitive fields like `API Token`, we use the credentials plugin, so be sure to create the text credential for this field and select the correct one on the dropdown.
 
 ## Post-Build Actions
 
@@ -128,9 +129,19 @@ For the complete list of supported tools and their expected file formats, refer 
 
 ## Requirements
 
-- Jenkins 2.440.3 or later
+- Jenkins 2.479.3 or later
 - Java 8 or later (for running the CLT)
 - Internet access to download the CLT from your Finite State instance
+
+## Version Compatibility
+
+This plugin is built with:
+- **Plugin Parent Version**: 5.9
+- **Jenkins Baseline**: 2.479
+- **Jenkins Version**: 2.479.3
+- **BOM Version**: 3814.v9563d972079a_
+
+The plugin is compatible with Jenkins LTS versions 2.479.3 and later. For the latest compatibility information, refer to the [Jenkins Plugin Compatibility Matrix](https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/).
 
 ## Security
 

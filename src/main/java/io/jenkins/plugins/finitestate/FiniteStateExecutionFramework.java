@@ -26,9 +26,9 @@ public class FiniteStateExecutionFramework {
      * @param listener The build listener
      * @return true if successful, false otherwise
      */
-    public static boolean executeAnalysis(BaseFiniteStateRecorder recorder, AbstractBuild build, 
-                                        Launcher launcher, BuildListener listener) 
-                                        throws InterruptedException, IOException {
+    public static boolean executeAnalysis(
+            BaseFiniteStateRecorder recorder, AbstractBuild build, Launcher launcher, BuildListener listener)
+            throws InterruptedException, IOException {
 
         listener.getLogger().println("Starting Finite State " + recorder.getAnalysisType() + "...");
 
@@ -44,10 +44,10 @@ public class FiniteStateExecutionFramework {
             listener.getLogger().println(errorMessage);
 
             // Add error to consolidated results
-            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + 
-                                 "\nCredential ID: " + recorder.getApiToken();
-            recorder.addConsolidatedResult(build, recorder.getAnalysisType(), recorder.getProjectName(), 
-                                         consoleOutput, "ERROR", "N/A");
+            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\nCredential ID: "
+                    + recorder.getApiToken();
+            recorder.addConsolidatedResult(
+                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 
             return false;
         }
@@ -67,11 +67,11 @@ public class FiniteStateExecutionFramework {
             listener.getLogger().println(errorMessage);
 
             // Add error to consolidated results
-            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + 
-                                 "\nSubdomain: " + recorder.getSubdomain() + 
-                                 "\nCredential ID: " + recorder.getApiToken();
-            recorder.addConsolidatedResult(build, recorder.getAnalysisType(), recorder.getProjectName(), 
-                                         consoleOutput, "ERROR", "N/A");
+            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\nSubdomain: "
+                    + recorder.getSubdomain() + "\nCredential ID: "
+                    + recorder.getApiToken();
+            recorder.addConsolidatedResult(
+                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 
             return false;
         }
@@ -79,23 +79,23 @@ public class FiniteStateExecutionFramework {
         // Verify file exists
         File fileObj = recorder.getFileFromWorkspace(build, recorder.getFilePathValue(), listener);
         if (fileObj == null || !fileObj.exists()) {
-            String errorMessage = "ERROR: " + recorder.getFilePathFieldName() + " not found: " + 
-                                recorder.getFilePathValue();
+            String errorMessage =
+                    "ERROR: " + recorder.getFilePathFieldName() + " not found: " + recorder.getFilePathValue();
             listener.getLogger().println(errorMessage);
 
             // Add error to consolidated results
-            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + 
-                                 "\n" + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue();
-            recorder.addConsolidatedResult(build, recorder.getAnalysisType(), recorder.getProjectName(), 
-                                         consoleOutput, "ERROR", "N/A");
+            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\n"
+                    + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue();
+            recorder.addConsolidatedResult(
+                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 
             return false;
         }
 
         // Execute the analysis
         listener.getLogger().println("Executing Finite State " + recorder.getAnalysisType() + "...");
-        int exitCode = recorder.executeAnalysis(cltPath, fileObj.getAbsolutePath(), 
-                                             recorder.getProjectName(), parsedVersion, listener);
+        int exitCode = recorder.executeAnalysis(
+                cltPath, fileObj.getAbsolutePath(), recorder.getProjectName(), parsedVersion, listener);
 
         return handleExitCode(recorder, build, listener, exitCode, parsedVersion);
     }
@@ -103,40 +103,45 @@ public class FiniteStateExecutionFramework {
     /**
      * Handle the exit code from the analysis execution
      */
-    private static boolean handleExitCode(BaseFiniteStateRecorder recorder, AbstractBuild build, 
-                                        BuildListener listener, int exitCode, String parsedVersion) {
-        
+    private static boolean handleExitCode(
+            BaseFiniteStateRecorder recorder,
+            AbstractBuild build,
+            BuildListener listener,
+            int exitCode,
+            String parsedVersion) {
+
         String scanUrl = "https://" + recorder.getSubdomain();
-        
+
         if (exitCode == 0) {
             // Success case
             String consoleOutput = buildSuccessMessage(recorder, parsedVersion, exitCode);
-            recorder.addConsolidatedResult(build, recorder.getAnalysisType(), recorder.getProjectName(), 
-                                         consoleOutput, "SUCCESS", scanUrl);
+            recorder.addConsolidatedResult(
+                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "SUCCESS", scanUrl);
 
             listener.getLogger().println("✅ Finite State " + recorder.getAnalysisType() + " started successfully!");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
             return true;
-            
+
         } else if (exitCode == 1) {
             // Warning case - vulnerabilities found but scan completed
             String consoleOutput = buildWarningMessage(recorder, parsedVersion, exitCode);
-            recorder.addConsolidatedResult(build, recorder.getAnalysisType(), recorder.getProjectName(), 
-                                         consoleOutput, "WARNING", scanUrl);
+            recorder.addConsolidatedResult(
+                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "WARNING", scanUrl);
 
-            listener.getLogger().println("⚠️ Finite State " + recorder.getAnalysisType() + 
-                                      " completed with vulnerabilities found.");
+            listener.getLogger()
+                    .println(
+                            "⚠️ Finite State " + recorder.getAnalysisType() + " completed with vulnerabilities found.");
             listener.getLogger().println("Access your scan results at: " + scanUrl);
             return true;
-            
+
         } else {
             // Error case
             String consoleOutput = buildErrorMessage(recorder, parsedVersion, exitCode);
-            recorder.addConsolidatedResult(build, recorder.getAnalysisType(), recorder.getProjectName(), 
-                                         consoleOutput, "ERROR", "N/A");
+            recorder.addConsolidatedResult(
+                    build, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 
-            listener.getLogger().println("❌ Finite State " + recorder.getAnalysisType() + 
-                                      " failed with exit code: " + exitCode);
+            listener.getLogger()
+                    .println("❌ Finite State " + recorder.getAnalysisType() + " failed with exit code: " + exitCode);
             return false;
         }
     }
@@ -145,34 +150,36 @@ public class FiniteStateExecutionFramework {
      * Build success message for consolidated results
      */
     private static String buildSuccessMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
-        return "✅ Finite State " + recorder.getAnalysisType() + " started successfully!\n" +
-               "Access your scan results at: https://" + recorder.getSubdomain() + "\n" +
-               "Project: " + recorder.getProjectName() + "\n" +
-               recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue() + "\n" +
-               "Project Version: " + parsedVersion + "\n" +
-               "Exit Code: " + exitCode;
+        return "✅ Finite State " + recorder.getAnalysisType() + " started successfully!\n"
+                + "Access your scan results at: https://"
+                + recorder.getSubdomain() + "\n" + "Project: "
+                + recorder.getProjectName() + "\n" + recorder.getFilePathFieldName()
+                + ": " + recorder.getFilePathValue() + "\n" + "Project Version: "
+                + parsedVersion + "\n" + "Exit Code: "
+                + exitCode;
     }
 
     /**
      * Build warning message for consolidated results
      */
     private static String buildWarningMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
-        return "⚠️ Finite State " + recorder.getAnalysisType() + " completed with vulnerabilities found.\n" +
-               "Access your scan results at: https://" + recorder.getSubdomain() + "\n" +
-               "Project: " + recorder.getProjectName() + "\n" +
-               recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue() + "\n" +
-               "Project Version: " + parsedVersion + "\n" +
-               "Exit Code: " + exitCode;
+        return "⚠️ Finite State " + recorder.getAnalysisType() + " completed with vulnerabilities found.\n"
+                + "Access your scan results at: https://"
+                + recorder.getSubdomain() + "\n" + "Project: "
+                + recorder.getProjectName() + "\n" + recorder.getFilePathFieldName()
+                + ": " + recorder.getFilePathValue() + "\n" + "Project Version: "
+                + parsedVersion + "\n" + "Exit Code: "
+                + exitCode;
     }
 
     /**
      * Build error message for consolidated results
      */
     private static String buildErrorMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
-        return "❌ Finite State " + recorder.getAnalysisType() + " failed with exit code: " + exitCode + "\n" +
-               "Project: " + recorder.getProjectName() + "\n" +
-               recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue() + "\n" +
-               "Project Version: " + parsedVersion + "\n" +
-               "Error Details: ";
+        return "❌ Finite State " + recorder.getAnalysisType() + " failed with exit code: " + exitCode + "\n"
+                + "Project: "
+                + recorder.getProjectName() + "\n" + recorder.getFilePathFieldName()
+                + ": " + recorder.getFilePathValue() + "\n" + "Project Version: "
+                + parsedVersion + "\n" + "Error Details: ";
     }
 }

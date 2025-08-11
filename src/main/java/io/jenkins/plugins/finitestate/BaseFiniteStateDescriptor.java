@@ -1,6 +1,5 @@
 package io.jenkins.plugins.finitestate;
 
-import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import hudson.model.Item;
 import hudson.security.ACL;

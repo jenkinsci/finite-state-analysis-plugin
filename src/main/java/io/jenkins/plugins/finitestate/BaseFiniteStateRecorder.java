@@ -155,7 +155,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
         if (filePath != null) {
             listener.getLogger().println("File: " + filePath);
         }
-        
+
         String parsedVersion = parseVersion(build, projectVersion);
         if (parsedVersion != null && !parsedVersion.trim().isEmpty()) {
             listener.getLogger().println("Project version: " + parsedVersion);
@@ -165,8 +165,13 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
     /**
      * Add result to consolidated results action
      */
-    protected void addConsolidatedResult(AbstractBuild build, String analysisType, String projectName, 
-                                       String consoleOutput, String status, String url) {
+    protected void addConsolidatedResult(
+            AbstractBuild build,
+            String analysisType,
+            String projectName,
+            String consoleOutput,
+            String status,
+            String url) {
         FiniteStateConsolidatedResultsAction.getOrCreate(build)
                 .addResult(analysisType, projectName, consoleOutput, status, url);
     }
@@ -174,9 +179,9 @@ public abstract class BaseFiniteStateRecorder extends Recorder {
     /**
      * Abstract method for executing the specific analysis
      */
-    protected abstract int executeAnalysis(Path cltPath, String filePath, String projectName, 
-                                        String projectVersion, BuildListener listener) 
-                                        throws IOException, InterruptedException;
+    protected abstract int executeAnalysis(
+            Path cltPath, String filePath, String projectName, String projectVersion, BuildListener listener)
+            throws IOException, InterruptedException;
 
     /**
      * Get the analysis type name for logging and results

@@ -8,6 +8,7 @@ import hudson.util.FormValidation;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -60,9 +61,9 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     }
 
     @Override
-    protected int executeAnalysis(Path cltPath, String filePath, String projectName, 
-                                String projectVersion, BuildListener listener) 
-                                throws IOException, InterruptedException {
+    protected int executeAnalysis(
+            Path cltPath, String filePath, String projectName, String projectVersion, BuildListener listener)
+            throws IOException, InterruptedException {
         return executeSBOMImport(cltPath, filePath, projectName, projectVersion, getPreRelease(), listener);
     }
 
@@ -116,7 +117,8 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
         Process process = processBuilder.start();
 
         // Read output
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+        try (BufferedReader reader =
+                new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 listener.getLogger().println(line);
@@ -131,8 +133,8 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     public static final class DescriptorImpl extends BaseFiniteStateDescriptor {
 
         @RequirePOST
-        public FormValidation doCheckSbomFilePath(@QueryParameter String value)
-                throws IOException, ServletException {
+        // lgtm[jenkins/no-permission-check]
+        public FormValidation doCheckSbomFilePath(@QueryParameter String value) throws IOException, ServletException {
             return checkRequiredValue(null, value);
         }
 

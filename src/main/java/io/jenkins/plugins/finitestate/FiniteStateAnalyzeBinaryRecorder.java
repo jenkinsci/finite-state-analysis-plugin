@@ -8,6 +8,7 @@ import hudson.util.FormValidation;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -108,11 +109,11 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     }
 
     @Override
-    protected int executeAnalysis(Path cltPath, String filePath, String projectName, 
-                                String projectVersion, BuildListener listener) 
-                                throws IOException, InterruptedException {
-        return executeCLT(cltPath, filePath, projectName, projectVersion, 
-                         buildScanTypesString(), getPreRelease(), listener);
+    protected int executeAnalysis(
+            Path cltPath, String filePath, String projectName, String projectVersion, BuildListener listener)
+            throws IOException, InterruptedException {
+        return executeCLT(
+                cltPath, filePath, projectName, projectVersion, buildScanTypesString(), getPreRelease(), listener);
     }
 
     @Override
@@ -135,7 +136,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
      */
     private String buildScanTypesString() {
         List<String> selectedTypes = new ArrayList<>();
-        
+
         if (getScaEnabled()) {
             selectedTypes.add("sca");
         }
@@ -145,12 +146,12 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
         if (getConfigEnabled()) {
             selectedTypes.add("config");
         }
-        
+
         // If no scans are selected, default to sca (required)
         if (selectedTypes.isEmpty()) {
             selectedTypes.add("sca");
         }
-        
+
         return String.join(",", selectedTypes);
     }
 
@@ -198,7 +199,8 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
 
         // Read output and look for URL
         String uploadUrl = null;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+        try (BufferedReader reader =
+                new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 listener.getLogger().println(line);
@@ -226,8 +228,8 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     public static final class DescriptorImpl extends BaseFiniteStateDescriptor {
 
         @RequirePOST
-        public FormValidation doCheckBinaryFilePath(@QueryParameter String value)
-                throws IOException, ServletException {
+        // lgtm[jenkins/no-permission-check]
+        public FormValidation doCheckBinaryFilePath(@QueryParameter String value) throws IOException, ServletException {
             return checkRequiredValue(null, value);
         }
 

@@ -5,6 +5,8 @@ import java.io.Serializable;
 import jenkins.model.RunAction2;
 
 public class FiniteStateResultsAction implements RunAction2, Serializable {
+    private static final long serialVersionUID = 1L;
+
     private transient Run build;
     private String projectName;
     private String consoleOutput;

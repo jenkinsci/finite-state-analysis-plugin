@@ -7,6 +7,8 @@ import java.util.List;
 import jenkins.model.RunAction2;
 
 public class FiniteStateConsolidatedResultsAction implements RunAction2, Serializable {
+    private static final long serialVersionUID = 1L;
+
     private transient Run build;
     private List<AnalysisResult> results;
 
@@ -66,6 +68,8 @@ public class FiniteStateConsolidatedResultsAction implements RunAction2, Seriali
     }
 
     public static class AnalysisResult implements Serializable {
+        private static final long serialVersionUID = 1L;
+
         private String analysisType;
         private String projectName;
         private String consoleOutput;
