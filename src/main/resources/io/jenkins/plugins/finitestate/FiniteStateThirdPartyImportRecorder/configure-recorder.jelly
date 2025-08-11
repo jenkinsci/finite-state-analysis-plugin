@@ -1,0 +1,12 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+  <f:entry title="Scan File Path" field="scanFilePath">
+    <f:textbox />
+  </f:entry>
+
+  <f:entry title="Scan Type" field="scanType">
+    <f:select />
+  </f:entry>
+</j:jelly>
+
+
