@@ -4,7 +4,9 @@
     <f:textbox />
   </f:entry>
 
-  <l:card title="Scan Types">
+  <div class="jenkins-!-margin-bottom-3 jenkins-!-padding-2">
+    <h3 class="jenkins-!-margin-bottom-2">Scan Types</h3>
+
     <div class="jenkins-!-font-size-small jenkins-!-margin-bottom-3">
       Select one or more scans to perform on this binary. Binary SCA is enabled by default.
     </div>
@@ -23,7 +25,7 @@
     <div class="jenkins-!-font-size-small">
       Finds configuration issues like hardcoded secrets.
     </div>
-  </l:card>
+  </div>
 </j:jelly>
 
 
