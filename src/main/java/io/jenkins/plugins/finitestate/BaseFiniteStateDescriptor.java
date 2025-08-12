@@ -27,24 +27,25 @@ public abstract class BaseFiniteStateDescriptor extends BuildStepDescriptor<Publ
     }
 
     /**
-     * Common method to fill API token items from credentials
+     * Populate the dropdown for apiTokenCredentialsId from Jenkins credentials.
      */
     @RequirePOST
-    public ListBoxModel doFillApiTokenItems(@AncestorInPath Item item, @QueryParameter String apiToken) {
+    public ListBoxModel doFillApiTokenCredentialsIdItems(
+            @AncestorInPath Item item, @QueryParameter String apiTokenCredentialsId) {
         StandardListBoxModel result = new StandardListBoxModel();
         if (item == null) {
             if (!Jenkins.get().hasPermission(Jenkins.ADMINISTER)) {
-                return result.includeCurrentValue(apiToken);
+                return result.includeCurrentValue(apiTokenCredentialsId);
             }
         } else {
             if (!item.hasPermission(Item.CONFIGURE)) {
-                return result.includeCurrentValue(apiToken);
+                return result.includeCurrentValue(apiTokenCredentialsId);
             }
         }
 
-        result.add("", "Select API Token");
+        result.add("", "Select API Token Credentials");
         result.includeAs(ACL.SYSTEM, item, StringCredentials.class, Collections.emptyList());
-        return result.includeCurrentValue(apiToken);
+        return result.includeCurrentValue(apiTokenCredentialsId);
     }
 
     /**
@@ -67,13 +68,15 @@ public abstract class BaseFiniteStateDescriptor extends BuildStepDescriptor<Publ
     }
 
     /**
-     * Common API token validation
+     * Common API token credentials validation
      */
     @RequirePOST
-    public FormValidation doCheckApiToken(@AncestorInPath Item item, @QueryParameter String value)
+    public FormValidation doCheckApiTokenCredentialsId(@AncestorInPath Item item, @QueryParameter String value)
             throws IOException, ServletException {
         return checkRequiredValue(value);
     }
+
+    // Removed legacy apiToken validation (plugin in development)
 
     /**
      * Common project name validation

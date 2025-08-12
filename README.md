@@ -44,7 +44,7 @@ Uploads binary files to Finite State for comprehensive analysis.
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
 | Subdomain | Your Finite State instance subdomain (e.g., "fs-yolo.dev.fstate.ninja") | `true` | `string` | |
-| API Token | A Secret text credential containing your Finite State API token | `true` | `credential` | |
+| API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
 | Binary File Path | Path to the binary file to upload for analysis | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Project Version | Version of the project (recommended for tracking) | `false` | `string` | |
@@ -57,7 +57,7 @@ Imports SBOM (Software Bill of Materials) files to Finite State for analysis.
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
 | Subdomain | Your Finite State instance subdomain | `true` | `string` | |
-| API Token | A Secret text credential containing your Finite State API token | `true` | `credential` | |
+| API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
 | SBOM File Path | Path to the SBOM file to import | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Project Version | Version of the project | `false` | `string` | |
@@ -69,7 +69,7 @@ Imports third-party scan results to Finite State for analysis.
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
 | Subdomain | Your Finite State instance subdomain | `true` | `string` | |
-| API Token | A Secret text credential containing your Finite State API token | `true` | `credential` | |
+| API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
 | Scan File Path | Path to the scan results file | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Scan Type | Type of third-party scanner (e.g., GitLab SAST, SonarQube, Snyk, etc.) | `true` | `dropdown` | |
@@ -107,7 +107,7 @@ pipeline {
       steps {
         finiteStateAnalyzeBinary(
           subdomain: 'fs-your-subdomain.finitestate.io',
-          apiToken: 'your-jenkins-string-credentials-id',
+          apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
           binaryFilePath: 'build/firmware.bin',
           projectName: 'My Project',
           projectVersion: '1.2.3',
@@ -131,7 +131,7 @@ pipeline {
 node {
   stage('Analyze Binary') {
     finiteStateAnalyzeBinary subdomain: 'fs-your-subdomain.finitestate.io',
-      apiToken: 'your-jenkins-string-credentials-id',
+      apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
       binaryFilePath: 'build/firmware.bin',
       projectName: 'My Project',
       projectVersion: '1.2.3',
@@ -150,7 +150,7 @@ node {
 node {
   stage('Import SBOM') {
     finiteStateImportSbom subdomain: 'fs-your-subdomain.finitestate.io',
-      apiToken: 'your-jenkins-string-credentials-id',
+      apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
       sbomFilePath: 'sbom/cyclonedx.json',
       projectName: 'My Project',
       projectVersion: '1.2.3',
@@ -166,7 +166,7 @@ node {
 node {
   stage('Import 3rd Party Scan') {
     finiteStateImportThirdParty subdomain: 'fs-your-subdomain.finitestate.io',
-      apiToken: 'your-jenkins-string-credentials-id',
+      apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
       scanFilePath: 'reports/sonarqube.json',
       scanType: 'sonarqube_scan',
       projectName: 'My Project',
@@ -178,7 +178,7 @@ node {
 ```
 
 Notes:
-- `apiToken` is the ID of a Secret Text credential containing your Finite State API token.
+- Use `apiTokenCredentialsId` (the ID of a Secret Text credential containing your Finite State API token).
 - If you set `externalizableId: true`, the step will use the Jenkins Run Externalizable ID as the project version.
 
 ## Scan Types for Binary Analysis

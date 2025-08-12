@@ -44,15 +44,14 @@ public class FiniteStateExecutionFramework {
             return false;
         }
 
-        // Get API token from credentials
-        String parsedApiToken = recorder.getSecretTextValue(run, recorder.getApiToken());
+        String parsedApiToken = recorder.getSecretTextValue(run, recorder.getApiTokenCredentialsId());
         if (parsedApiToken == null) {
             String errorMessage = "ERROR: Could not retrieve API token from credentials";
             listener.getLogger().println(errorMessage);
 
             // Add error to consolidated results
             String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\nCredential ID: "
-                    + recorder.getApiToken();
+                    + recorder.getApiTokenCredentialsId();
             recorder.addConsolidatedResult(
                     run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 
@@ -76,7 +75,7 @@ public class FiniteStateExecutionFramework {
             // Add error to consolidated results
             String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\nSubdomain: "
                     + recorder.getSubdomain() + "\nCredential ID: "
-                    + recorder.getApiToken();
+                    + recorder.getApiTokenCredentialsId();
             recorder.addConsolidatedResult(
                     run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
 

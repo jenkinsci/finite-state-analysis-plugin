@@ -6,8 +6,8 @@
         <f:textbox />
       </f:entry>
 
-      <f:entry title="API Token" field="apiToken" help="/io/jenkins/plugins/finitestate/help-apiToken.html">
-        <c:select expression="${instance.apiToken}" />
+      <f:entry title="API Token Credentials" field="apiTokenCredentialsId" help="/io/jenkins/plugins/finitestate/help-apiToken.html">
+        <c:select expression="${instance.apiTokenCredentialsId}" />
       </f:entry>
 
       <!-- Recorder-specific configuration -->
