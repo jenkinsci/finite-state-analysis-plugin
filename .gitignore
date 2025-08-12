@@ -14,4 +14,4 @@ work
 .classpath
 .project
 finitestate-*.jar
-./mvn/wrapper
+.mvn/wrapper
