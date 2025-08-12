@@ -33,9 +33,9 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
 
     @DataBoundConstructor
     public FiniteStateAnalyzeBinaryRecorder(
-            String subdomain, String apiToken, String binaryFilePath, String projectName) {
+            String subdomain, String apiTokenCredentialsId, String binaryFilePath, String projectName) {
         this.subdomain = subdomain;
-        this.apiToken = apiToken;
+        this.apiTokenCredentialsId = apiTokenCredentialsId;
         this.binaryFilePath = binaryFilePath;
         this.projectName = projectName;
     }

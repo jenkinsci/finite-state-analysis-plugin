@@ -29,9 +29,10 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     private String sbomFilePath;
 
     @DataBoundConstructor
-    public FiniteStateSBOMImportRecorder(String subdomain, String apiToken, String sbomFilePath, String projectName) {
+    public FiniteStateSBOMImportRecorder(
+            String subdomain, String apiTokenCredentialsId, String sbomFilePath, String projectName) {
         this.subdomain = subdomain;
-        this.apiToken = apiToken;
+        this.apiTokenCredentialsId = apiTokenCredentialsId;
         this.sbomFilePath = sbomFilePath;
         this.projectName = projectName;
     }

@@ -23,7 +23,8 @@ import org.kohsuke.stapler.DataBoundSetter;
 public abstract class BaseFiniteStateRecorder extends Recorder implements SimpleBuildStep {
 
     protected String subdomain;
-    protected String apiToken;
+    // Explicit name indicating this is a Jenkins Credentials ID (Secret Text) holding the API token.
+    protected String apiTokenCredentialsId;
     protected String projectName;
     protected String projectVersion;
     protected Boolean externalizableId;
@@ -38,8 +39,8 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
         return subdomain;
     }
 
-    public String getApiToken() {
-        return apiToken;
+    public String getApiTokenCredentialsId() {
+        return apiTokenCredentialsId;
     }
 
     public String getProjectName() {
@@ -63,8 +64,12 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
         this.subdomain = subdomain;
     }
 
-    public void setApiToken(String apiToken) {
-        this.apiToken = apiToken;
+    /**
+     * Setter to allow Pipeline usage like: apiTokenCredentialsId: 'my-secret-text-id'
+     */
+    @DataBoundSetter
+    public void setApiTokenCredentialsId(String apiTokenCredentialsId) {
+        this.apiTokenCredentialsId = apiTokenCredentialsId;
     }
 
     public void setProjectName(String projectName) {
@@ -151,15 +156,16 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
      * Validate common required fields
      */
     protected boolean validateCommonFields(TaskListener listener) {
-        if (subdomain == null || subdomain.trim().isEmpty()) {
+        if (subdomain == null || subdomain.isBlank()) {
             listener.getLogger().println("ERROR: Subdomain is required");
             return false;
         }
-        if (apiToken == null || apiToken.trim().isEmpty()) {
-            listener.getLogger().println("ERROR: API Token is required");
+        String credentialsId = getApiTokenCredentialsId();
+        if (credentialsId == null || credentialsId.isBlank()) {
+            listener.getLogger().println("ERROR: API Token credentials ID is required");
             return false;
         }
-        if (projectName == null || projectName.trim().isEmpty()) {
+        if (projectName == null || projectName.isBlank()) {
             listener.getLogger().println("ERROR: Project name is required");
             return false;
         }
@@ -177,7 +183,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
         }
 
         String parsedVersion = parseVersion(run, projectVersion);
-        if (parsedVersion != null && !parsedVersion.trim().isEmpty()) {
+        if (parsedVersion != null && !parsedVersion.isBlank()) {
             listener.getLogger().println("Project version: " + parsedVersion);
         }
     }

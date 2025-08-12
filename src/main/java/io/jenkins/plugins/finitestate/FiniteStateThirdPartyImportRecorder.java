@@ -31,9 +31,9 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
 
     @DataBoundConstructor
     public FiniteStateThirdPartyImportRecorder(
-            String subdomain, String apiToken, String scanFilePath, String projectName) {
+            String subdomain, String apiTokenCredentialsId, String scanFilePath, String projectName) {
         this.subdomain = subdomain;
-        this.apiToken = apiToken;
+        this.apiTokenCredentialsId = apiTokenCredentialsId;
         this.scanFilePath = scanFilePath;
         this.projectName = projectName;
     }
