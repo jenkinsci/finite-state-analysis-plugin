@@ -1,17 +1,14 @@
 package io.jenkins.plugins.finitestate;
 
 import hudson.Extension;
+import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
 import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import javax.servlet.ServletException;
@@ -64,10 +61,24 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
 
     @Override
     protected int executeAnalysis(
-            Path cltPath, String filePath, String projectName, String projectVersion, TaskListener listener)
+            FilePath cltPath,
+            FilePath filePath,
+            String projectName,
+            String projectVersion,
+            FilePath workspace,
+            Launcher launcher,
+            TaskListener listener)
             throws IOException, InterruptedException {
         return executeThirdPartyImport(
-                cltPath, filePath, projectName, projectVersion, scanType, getPreRelease(), listener);
+                cltPath,
+                filePath,
+                projectName,
+                projectVersion,
+                scanType,
+                getPreRelease(),
+                workspace,
+                launcher,
+                listener);
     }
 
     @Override
@@ -89,12 +100,14 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
      * Execute the third party import command
      */
     private int executeThirdPartyImport(
-            Path cltPath,
-            String scanFile,
+            FilePath cltPath,
+            FilePath scanFile,
             String projectName,
             String projectVersion,
             String scanType,
             boolean preRelease,
+            FilePath workspace,
+            Launcher launcher,
             TaskListener listener)
             throws IOException, InterruptedException {
 
@@ -102,11 +115,11 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
         List<String> command = new ArrayList<>();
         command.add("java");
         command.add("-jar");
-        command.add(cltPath.toString());
+        command.add(cltPath.getRemote());
         command.add("--thirdParty=" + scanType);
         command.add("--name=" + projectName);
         command.add("--version=" + projectVersion);
-        command.add(scanFile);
+        command.add(scanFile.getRemote());
 
         if (preRelease) {
             command.add("--pre-release");
@@ -114,22 +127,13 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
 
         listener.getLogger().println("Executing command: " + String.join(" ", command));
 
-        // Execute the process
-        ProcessBuilder processBuilder = new ProcessBuilder(command);
-        processBuilder.redirectErrorStream(true);
+        Launcher.ProcStarter starter = launcher.launch();
+        starter.cmds(command);
+        starter.stdout(listener.getLogger());
+        starter.stderr(listener.getLogger());
+        starter.pwd(workspace);
 
-        Process process = processBuilder.start();
-
-        // Read output
-        try (BufferedReader reader =
-                new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                listener.getLogger().println(line);
-            }
-        }
-
-        return process.waitFor();
+        return starter.join();
     }
 
     @Symbol("finiteStateImportThirdParty")
