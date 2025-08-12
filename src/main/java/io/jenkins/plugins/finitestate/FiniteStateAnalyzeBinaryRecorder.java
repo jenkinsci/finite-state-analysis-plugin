@@ -1,16 +1,13 @@
 package io.jenkins.plugins.finitestate;
 
 import hudson.Extension;
+import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
 import hudson.model.TaskListener;
 import hudson.util.FormValidation;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import javax.servlet.ServletException;
@@ -84,10 +81,24 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
 
     @Override
     protected int executeAnalysis(
-            Path cltPath, String filePath, String projectName, String projectVersion, TaskListener listener)
+            FilePath cltPath,
+            FilePath filePath,
+            String projectName,
+            String projectVersion,
+            FilePath workspace,
+            Launcher launcher,
+            TaskListener listener)
             throws IOException, InterruptedException {
         return executeCLT(
-                cltPath, filePath, projectName, projectVersion, buildScanTypesString(), getPreRelease(), listener);
+                cltPath,
+                filePath,
+                projectName,
+                projectVersion,
+                buildScanTypesString(),
+                getPreRelease(),
+                workspace,
+                launcher,
+                listener);
     }
 
     @Override
@@ -133,12 +144,14 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
      * Execute the CLT command for binary analysis
      */
     private int executeCLT(
-            Path cltPath,
-            String binaryFile,
+            FilePath cltPath,
+            FilePath binaryFile,
             String projectName,
             String projectVersion,
             String scanTypes,
             boolean preRelease,
+            FilePath workspace,
+            Launcher launcher,
             TaskListener listener)
             throws IOException, InterruptedException {
 
@@ -146,9 +159,9 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
         List<String> command = new ArrayList<>();
         command.add("java");
         command.add("-jar");
-        command.add(cltPath.toString());
+        command.add(cltPath.getRemote());
         command.add("--upload");
-        command.add(binaryFile);
+        command.add(binaryFile.getRemote());
         command.add("--name=" + projectName);
 
         if (projectVersion != null && !projectVersion.isBlank()) {
@@ -166,32 +179,16 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
 
         listener.getLogger().println("Executing command: " + String.join(" ", command));
 
-        // Execute the process
-        ProcessBuilder processBuilder = new ProcessBuilder(command);
-        processBuilder.redirectErrorStream(true);
+        // Execute remotely using Launcher
+        Launcher.ProcStarter starter = launcher.launch();
+        starter.cmds(command);
+        starter.stdout(listener.getLogger());
+        starter.stderr(listener.getLogger());
+        starter.pwd(workspace);
 
-        Process process = processBuilder.start();
+        int exitCode = starter.join();
 
-        // Read output and look for URL
-        String uploadUrl = null;
-        try (BufferedReader reader =
-                new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                listener.getLogger().println(line);
-                // Look for URL in the output
-                if (line.contains("https://") && line.contains("finitestate.io")) {
-                    uploadUrl = line.trim();
-                }
-            }
-        }
-
-        int exitCode = process.waitFor();
-
-        if (exitCode == 0 && uploadUrl != null) {
-            listener.getLogger().println("Finite State scan started successfully");
-            listener.getLogger().println("Upload URL: " + uploadUrl);
-        } else if (exitCode != 0) {
+        if (exitCode != 0) {
             listener.getLogger().println("Finite State scan failed with exit code: " + exitCode);
         }
 

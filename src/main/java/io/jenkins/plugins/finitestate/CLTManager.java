@@ -1,12 +1,10 @@
 package io.jenkins.plugins.finitestate;
 
+import hudson.FilePath;
 import hudson.model.TaskListener;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
 /**
  * Utility class for managing the Finite State CLT (Command Line Tool) download and caching.
@@ -45,46 +43,47 @@ public class CLTManager {
      * @return The path to the CLT JAR file
      * @throws IOException if download fails or file is invalid
      */
-    public static Path getOrDownloadCLT(String cltUrl, String apiToken, String subdomain, TaskListener listener)
-            throws IOException {
+    public static FilePath getOrDownloadCLT(
+            String cltUrl, String apiToken, String subdomain, FilePath workspace, TaskListener listener)
+            throws IOException, InterruptedException {
         String filename = getCLTFilename(subdomain);
-        Path cltPath = Paths.get(filename);
+        FilePath cltPath = workspace.child(filename);
 
-        // Check if CLT already exists, is executable, and is valid
-        if (cltPath.toFile().exists() && cltPath.toFile().canExecute() && testJarFile(cltPath, listener)) {
-            listener.getLogger().println("CLT already exists at: " + cltPath.toAbsolutePath());
+        // Check if CLT already exists on the node
+        if (cltPath.exists() && cltPath.length() > 0) {
+            listener.getLogger().println("CLT already exists at: " + cltPath.getRemote());
             return cltPath;
         }
 
         // Download the CLT if it doesn't exist
         listener.getLogger().println("CLT not found, downloading from: " + cltUrl);
-        return downloadCLT(cltUrl, apiToken, subdomain, listener);
+        return downloadCLT(cltUrl, apiToken, subdomain, cltPath, listener);
     }
 
     /**
      * Test if the JAR file is valid and executable
      */
-    private static boolean testJarFile(Path jarPath, TaskListener listener) {
-        try {
-            // Test if we can read the JAR file
-            try (java.util.jar.JarFile jarFile = new java.util.jar.JarFile(jarPath.toFile())) {
-                listener.getLogger().println("JAR file is valid and readable");
-                return true;
+    private static boolean testJarFile(FilePath jarPath, TaskListener listener)
+            throws IOException, InterruptedException {
+        try (java.io.InputStream is = jarPath.read()) {
+            byte[] header = new byte[4];
+            int read = is.read(header);
+            boolean looksLikeZip = read == 4 && header[0] == 0x50 && header[1] == 0x4B;
+            if (looksLikeZip) {
+                listener.getLogger().println("JAR file header verified successfully");
+            } else {
+                listener.getLogger().println("WARNING: File does not appear to be a valid JAR file");
             }
-        } catch (Exception e) {
-            listener.getLogger().println("JAR file validation failed: " + e.getMessage());
-            return false;
+            return looksLikeZip;
         }
     }
 
     /**
      * Download the CLT jar file
      */
-    private static Path downloadCLT(String url, String apiToken, String subdomain, TaskListener listener)
-            throws IOException {
-        String filename = getCLTFilename(subdomain);
-        Path cltPath = Paths.get(filename);
-
+    private static FilePath downloadCLT(
+            String url, String apiToken, String subdomain, FilePath cltPath, TaskListener listener)
+            throws IOException, InterruptedException {
         listener.getLogger().println("Downloading CLT from: " + url);
 
         // Create URL connection with authentication
@@ -142,8 +141,7 @@ public class CLTManager {
         // Download the file
         long totalBytes = 0;
         try (java.io.InputStream in = connection.getInputStream();
-                java.io.OutputStream out = Files.newOutputStream(cltPath)) {
-
+                java.io.OutputStream out = cltPath.write()) {
             byte[] buffer = new byte[8192];
             int bytesRead;
             while ((bytesRead = in.read(buffer)) != -1) {
@@ -153,36 +151,26 @@ public class CLTManager {
         }
 
         // Verify the downloaded file
-        if (!cltPath.toFile().exists()) {
+        if (!cltPath.exists()) {
             throw new IOException("Downloaded file does not exist");
         }
 
-        if (cltPath.toFile().length() == 0) {
+        if (cltPath.length() == 0) {
             throw new IOException("Downloaded file is empty");
         }
 
-        listener.getLogger().println("Downloaded " + totalBytes + " bytes to: " + cltPath.toAbsolutePath());
-        listener.getLogger().println("File size: " + cltPath.toFile().length() + " bytes");
+        listener.getLogger().println("Downloaded " + totalBytes + " bytes to: " + cltPath.getRemote());
+        listener.getLogger().println("File size: " + cltPath.length() + " bytes");
 
         // Verify it's a valid JAR file by checking the magic number
-        try (java.io.FileInputStream fis = new java.io.FileInputStream(cltPath.toFile())) {
-            byte[] header = new byte[4];
-            if (fis.read(header) == 4) {
-                // JAR files start with PK (0x50 0x4B)
-                if (header[0] == 0x50 && header[1] == 0x4B) {
-                    listener.getLogger().println("JAR file header verified successfully");
-                } else {
-                    listener.getLogger().println("WARNING: File does not appear to be a valid JAR file");
-                    listener.getLogger()
-                            .println("Expected PK header, got: "
-                                    + String.format("%02X %02X %02X %02X", header[0], header[1], header[2], header[3]));
-                }
-            }
-        }
+        testJarFile(cltPath, listener);
 
-        // Make the file executable
-        cltPath.toFile().setExecutable(true);
-        listener.getLogger().println("CLT downloaded successfully to: " + cltPath.toAbsolutePath());
+        try {
+            cltPath.chmod(0755);
+        } catch (Exception ignore) {
+            // best effort; may fail on non-POSIX filesystems
+        }
+        listener.getLogger().println("CLT downloaded successfully to: " + cltPath.getRemote());
 
         return cltPath;
     }

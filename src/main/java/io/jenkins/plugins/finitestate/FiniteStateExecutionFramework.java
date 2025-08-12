@@ -6,9 +6,7 @@ import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
 import hudson.model.Run;
 import hudson.model.TaskListener;
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
 
 /**
  * Execution framework for Finite State analysis operations.
@@ -65,9 +63,9 @@ public class FiniteStateExecutionFramework {
         recorder.logCommonInfo(run, listener, recorder.getFilePathValue());
 
         // Get CLT path
-        Path cltPath;
+        FilePath cltPath;
         try {
-            cltPath = recorder.getCLTPath(recorder.getSubdomain(), parsedApiToken, listener);
+            cltPath = recorder.getCLTPath(workspace, recorder.getSubdomain(), parsedApiToken, listener);
         } catch (IOException e) {
             String errorMessage = "ERROR: Failed to download CLT: " + e.getMessage();
             listener.getLogger().println(errorMessage);
@@ -83,7 +81,7 @@ public class FiniteStateExecutionFramework {
         }
 
         // Verify file exists
-        File fileObj = recorder.getFileFromWorkspace(workspace, recorder.getFilePathValue(), listener);
+        FilePath fileObj = recorder.getFileFromWorkspace(workspace, recorder.getFilePathValue(), listener);
         if (fileObj == null || !fileObj.exists()) {
             String errorMessage =
                     "ERROR: " + recorder.getFilePathFieldName() + " not found: " + recorder.getFilePathValue();
@@ -101,7 +99,7 @@ public class FiniteStateExecutionFramework {
         // Execute the analysis
         listener.getLogger().println("Executing Finite State " + recorder.getAnalysisType() + "...");
         int exitCode = recorder.executeAnalysis(
-                cltPath, fileObj.getAbsolutePath(), recorder.getProjectName(), parsedVersion, listener);
+                cltPath, fileObj, recorder.getProjectName(), parsedVersion, workspace, launcher, listener);
 
         return handleExitCode(recorder, run, listener, exitCode, parsedVersion);
     }

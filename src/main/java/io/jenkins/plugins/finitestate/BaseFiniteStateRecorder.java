@@ -9,9 +9,7 @@ import hudson.model.BuildListener;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.tasks.Recorder;
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
 import jenkins.tasks.SimpleBuildStep;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
 import org.kohsuke.stapler.DataBoundSetter;
@@ -94,7 +92,8 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     /**
      * Get file from workspace - common utility method (freestyle builds)
      */
-    protected File getFileFromWorkspace(AbstractBuild build, String relativeFilePath, BuildListener listener) {
+    protected FilePath getFileFromWorkspace(AbstractBuild build, String relativeFilePath, BuildListener listener)
+            throws IOException, InterruptedException {
         FilePath workspace = build.getWorkspace();
         return getFileFromWorkspace(workspace, relativeFilePath, (TaskListener) listener);
     }
@@ -102,12 +101,12 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     /**
      * Get file from workspace - common utility method (pipeline and freestyle)
      */
-    protected File getFileFromWorkspace(FilePath workspace, String relativeFilePath, TaskListener listener) {
+    protected FilePath getFileFromWorkspace(FilePath workspace, String relativeFilePath, TaskListener listener)
+            throws IOException, InterruptedException {
         if (workspace != null) {
-            String workspaceRemote = workspace.getRemote();
-            File file = new File(workspaceRemote, relativeFilePath);
-            listener.getLogger().println("Looking for file at: " + file.getAbsolutePath());
-            return file;
+            FilePath child = workspace.child(relativeFilePath);
+            listener.getLogger().println("Looking for file at: " + child.getRemote());
+            return child;
         }
         listener.getLogger().println("ERROR: Could not determine workspace path");
         return null;
@@ -137,9 +136,10 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     /**
      * Get CLT path using the shared CLTManager
      */
-    protected Path getCLTPath(String subdomain, String apiToken, TaskListener listener) throws IOException {
+    protected FilePath getCLTPath(FilePath workspace, String subdomain, String apiToken, TaskListener listener)
+            throws IOException, InterruptedException {
         String cltUrl = "https://" + subdomain + "/api/config/clt";
-        return CLTManager.getOrDownloadCLT(cltUrl, apiToken, subdomain, listener);
+        return CLTManager.getOrDownloadCLT(cltUrl, apiToken, subdomain, workspace, listener);
     }
 
     /**
@@ -201,7 +201,13 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
      * Abstract method for executing the specific analysis
      */
     protected abstract int executeAnalysis(
-            Path cltPath, String filePath, String projectName, String projectVersion, TaskListener listener)
+            FilePath cltPath,
+            FilePath filePath,
+            String projectName,
+            String projectVersion,
+            FilePath workspace,
+            Launcher launcher,
+            TaskListener listener)
             throws IOException, InterruptedException;
 
     /**
