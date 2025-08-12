@@ -6,35 +6,53 @@
             
             <j:if test="${it.hasResults()}">
                 <j:forEach var="result" items="${it.results}">
-                    <div style="margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 5px;">
-                        <h3 style="margin-top: 0; color: #333;">${result.analysisType}</h3>
-                        
-                        <div style="margin-bottom: 15px;">
-                            <p><strong>Project:</strong> ${result.projectName}</p>
-                            <p><strong>Status:</strong> 
-                                <span style="color: ${result.status == 'SUCCESS' ? 'green' : result.status == 'WARNING' ? 'orange' : 'red'}; font-weight: bold;">
-                                    ${result.status}
-                                </span>
-                            </p>
-                            <j:if test="${result.scanUrl != 'N/A'}">
-                                <p><strong>Scan URL:</strong> 
-                                    <a href="${result.scanUrl}" target="_blank">${result.scanUrl}</a>
+                        <l:card title="${result.analysisType}">
+                            <div class="jenkins-!-margin-bottom-2">
+                                <p><strong>Project:</strong> ${result.projectName}</p>
+                                <j:if test="${result.scanUrl != 'N/A'}">
+                                    <p><strong>Access results: </strong>
+                                        <a href="${result.scanUrl}" target="_blank">${result.scanUrl}</a>
+                                    </p>
+                                </j:if>
+                                <p>
+                                    <strong>Status: </strong>
+                                    <j:choose>
+                                        <j:when test="${result.status == 'SUCCESS'}">
+                                            <l:icon src="symbol-status-blue" class="icon-md jenkins-!-margin-right-1" />
+                                        </j:when>
+                                        <j:when test="${result.status == 'WARNING'}">
+                                            <l:icon src="symbol-status-yellow" class="icon-md jenkins-!-margin-right-1" />
+                                        </j:when>
+                                        <j:when test="${result.status == 'FAILURE' || result.status == 'ERROR'}">
+                                            <l:icon src="symbol-status-red" class="icon-md jenkins-!-margin-right-1" />
+                                        </j:when>
+                                        <j:when test="${result.status == 'ABORTED'}">
+                                            <l:icon src="symbol-status-aborted" class="icon-md jenkins-!-margin-right-1" />
+                                        </j:when>
+                                        <j:when test="${result.status == 'NOT_BUILT'}">
+                                            <l:icon src="symbol-status-nobuilt" class="icon-md jenkins-!-margin-right-1" />
+                                        </j:when>
+                                        <j:when test="${result.status == 'DISABLED'}">
+                                            <l:icon src="symbol-status-disabled" class="icon-md jenkins-!-margin-right-1" />
+                                        </j:when>
+                                        <j:otherwise>
+                                            <l:icon src="symbol-status-yellow" class="icon-md jenkins-!-margin-right-1" />
+                                        </j:otherwise>
+                                    </j:choose>
+                                    <span class="jenkins-!-font-weight-bold">${result.status}</span>
                                 </p>
-                            </j:if>
-                        </div>
-                        
-                        <div style="background-color: #f5f5f5; border: 1px solid #ddd; padding: 10px; font-family: monospace; white-space: pre-wrap; max-height: 300px; overflow-y: auto;">
-                            ${result.consoleOutput ?: 'No console output available'}
-                        </div>
-                    </div>
+                            </div>
+                            <h4 class="jenkins-!-margin-top-2 jenkins-!-margin-bottom-1">Details</h4>
+                            <pre class="jenkins-!-margin-bottom-0">
+                                ${result.consoleOutput ?: 'No console output available'}
+                            </pre>
+                    </l:card>
                 </j:forEach>
             </j:if>
             
             <j:if test="${!it.hasResults()}">
                 <p><em>No analysis results available.</em></p>
             </j:if>
-            
-            <p><em>Generated on: ${it.run.timestampString}</em></p>
         </l:main-panel>
     </l:layout>
 </j:jelly> 

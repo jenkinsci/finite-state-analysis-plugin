@@ -136,7 +136,6 @@ public class FiniteStateExecutionFramework {
                     run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "SUCCESS", scanUrl);
 
             listener.getLogger().println("✅ Finite State " + recorder.getAnalysisType() + " started successfully!");
-            listener.getLogger().println("Access your scan results at: " + scanUrl);
             return true;
 
         } else if (exitCode == 1) {
@@ -148,7 +147,6 @@ public class FiniteStateExecutionFramework {
             listener.getLogger()
                     .println(
                             "⚠️ Finite State " + recorder.getAnalysisType() + " completed with vulnerabilities found.");
-            listener.getLogger().println("Access your scan results at: " + scanUrl);
             return true;
 
         } else {
@@ -167,36 +165,29 @@ public class FiniteStateExecutionFramework {
      * Build success message for consolidated results
      */
     private static String buildSuccessMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
-        return "✅ Finite State " + recorder.getAnalysisType() + " started successfully!\n"
-                + "Access your scan results at: https://"
-                + recorder.getSubdomain() + "\n" + "Project: "
-                + recorder.getProjectName() + "\n" + recorder.getFilePathFieldName()
-                + ": " + recorder.getFilePathValue() + "\n" + "Project Version: "
-                + parsedVersion + "\n" + "Exit Code: "
-                + exitCode;
+        return "Finite State " + recorder.getAnalysisType() + " started successfully!\n"
+                + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue() + "\n"
+                + "Project Version: " + parsedVersion + "\n"
+                + "Exit Code: " + exitCode;
     }
 
     /**
      * Build warning message for consolidated results
      */
     private static String buildWarningMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
-        return "⚠️ Finite State " + recorder.getAnalysisType() + " completed with vulnerabilities found.\n"
-                + "Access your scan results at: https://"
-                + recorder.getSubdomain() + "\n" + "Project: "
-                + recorder.getProjectName() + "\n" + recorder.getFilePathFieldName()
-                + ": " + recorder.getFilePathValue() + "\n" + "Project Version: "
-                + parsedVersion + "\n" + "Exit Code: "
-                + exitCode;
+        return "Finite State " + recorder.getAnalysisType() + " completed with vulnerabilities found.\n"
+                + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue() + "\n"
+                + "Project Version: " + parsedVersion + "\n"
+                + "Exit Code: " + exitCode;
     }
 
     /**
      * Build error message for consolidated results
      */
     private static String buildErrorMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
-        return "❌ Finite State " + recorder.getAnalysisType() + " failed with exit code: " + exitCode + "\n"
-                + "Project: "
-                + recorder.getProjectName() + "\n" + recorder.getFilePathFieldName()
-                + ": " + recorder.getFilePathValue() + "\n" + "Project Version: "
-                + parsedVersion + "\n" + "Error Details: ";
+        return "Finite State " + recorder.getAnalysisType() + " failed with exit code: " + exitCode + "\n"
+                + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue() + "\n"
+                + "Project Version: " + parsedVersion + "\n"
+                + "Exit Code: " + exitCode;
     }
 }

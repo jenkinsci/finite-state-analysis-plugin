@@ -1,36 +1,29 @@
 <?jelly escape-by-default='true'?>
-<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form" xmlns:l="/lib/layout">
   <f:entry title="Binary File Path" field="binaryFilePath">
     <f:textbox />
   </f:entry>
 
-  <f:entry title="Scan Types" description="Select one or more scans to perform on this binary. Binary SCA is enabled by default.">
-    <div class="scan-types-container">
-      <div class="scan-type-option">
-        <f:checkbox field="scaEnabled" default="true" />
-        <label class="scan-type-label">
-          <strong>Binary SCA</strong>
-          <span class="scan-type-description">Generates an SBOM as a CycloneDX JSON document.</span>
-        </label>
-      </div>
-
-      <div class="scan-type-option">
-        <f:checkbox field="sastEnabled" default="false" />
-        <label class="scan-type-label">
-          <strong>Binary SAST</strong>
-          <span class="scan-type-description">Detects previously unknown issues in binary files.</span>
-        </label>
-      </div>
-
-      <div class="scan-type-option">
-        <f:checkbox field="configEnabled" default="false" />
-        <label class="scan-type-label">
-          <strong>Configuration Analysis</strong>
-          <span class="scan-type-description">Finds configuration issues like hardcoded secrets.</span>
-        </label>
-      </div>
+  <l:card title="Scan Types">
+    <div class="jenkins-!-font-size-small jenkins-!-margin-bottom-3">
+      Select one or more scans to perform on this binary. Binary SCA is enabled by default.
     </div>
-  </f:entry>
+
+    <f:checkbox title="Binary SCA" field="scaEnabled" default="true"/>
+    <div class="jenkins-!-font-size-small jenkins-!-margin-bottom-3">
+      Generates an SBOM as a CycloneDX JSON document.
+    </div>
+
+    <f:checkbox title="Binary SAST" field="sastEnabled" default="false"/>
+    <div class="jenkins-!-font-size-small jenkins-!-margin-bottom-3">
+      Detects previously unknown issues in binary files.
+    </div>
+
+    <f:checkbox title="Configuration Analysis" field="configEnabled" default="false"/>
+    <div class="jenkins-!-font-size-small">
+      Finds configuration issues like hardcoded secrets.
+    </div>
+  </l:card>
 </j:jelly>
 
 
