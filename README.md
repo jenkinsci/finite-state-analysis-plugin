@@ -48,7 +48,7 @@ Uploads binary files to Finite State for comprehensive analysis.
 | Binary File Path | Path to the binary file to upload for analysis | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Project Version | Version of the project (recommended for tracking) | `false` | `string` | |
-| Scan Types | Select from SCA, SAST, and Configuration Analysis | `false` | `multiple` | `SCA` |
+| Scan Types | Enable one or more: Binary SCA, Binary SAST, Configuration Analysis. If none are selected, SCA is used by default. | `false` | `checkboxes` | `SCA enabled; SAST/Config disabled` |
 
 ### 2. Finite State Import SBOM
 
@@ -183,6 +183,10 @@ Notes:
 
 ## Scan Types for Binary Analysis
 
+- These options are presented in the UI as three checkboxes: `Binary SCA`, `Binary SAST`, and `Configuration Analysis`.
+- At runtime, the plugin builds the CLI flag `--upload` by concatenating the enabled scan types as a comma-separated list (e.g., `--upload=sca,sast`).
+- If none are selected, SCA is enforced by default.
+
 - **SCA**: Binary Software Composition Analysis (default)
 - **SAST**: Binary Static Application Security Testing
 - **Configuration Analysis**: Configuration and security analysis
@@ -228,16 +232,6 @@ For the complete list of supported tools and their expected file formats, refer 
 - Java 8 or later (for running the CLT)
 - Internet access to download the CLT from your Finite State instance
 
-## Version Compatibility
-
-This plugin is built with:
-- **Plugin Parent Version**: 5.9
-- **Jenkins Baseline**: 2.479
-- **Jenkins Version**: 2.479.3
-- **BOM Version**: 3814.v9563d972079a_
-
-The plugin is compatible with Jenkins LTS versions 2.479.3 and later. For the latest compatibility information, refer to the [Jenkins Plugin Compatibility Matrix](https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/).
-
 ## Security
 
 - API tokens are stored securely using Jenkins credentials
@@ -246,7 +240,7 @@ The plugin is compatible with Jenkins LTS versions 2.479.3 and later. For the la
 
 ## Issues
 
-Report issues and enhancements in the [Github issue tracker](https://github.com/FiniteStateInc/finite-state-jenkins-plugin/issues).
+Report issues and enhancements in the [Github issue tracker](https://github.com/jenkinsci/finite-state-jenkins-plugin/issues).
 
 ## Contributing
 
