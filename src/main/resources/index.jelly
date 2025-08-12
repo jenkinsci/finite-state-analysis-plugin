@@ -1,4 +1,4 @@
 <?jelly escape-by-default='true'?>
 <div>
-    Finite State plugin for uploading binary files for analysis.
+    Finite State plugin for uploading files for analysis.
 </div> 

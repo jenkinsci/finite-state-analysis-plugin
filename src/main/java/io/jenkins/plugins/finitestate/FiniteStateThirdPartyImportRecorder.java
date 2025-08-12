@@ -4,6 +4,7 @@ import hudson.Extension;
 import hudson.Launcher;
 import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
+import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import java.io.BufferedReader;
@@ -30,22 +31,11 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
 
     @DataBoundConstructor
     public FiniteStateThirdPartyImportRecorder(
-            String subdomain,
-            String apiToken,
-            String scanFilePath,
-            String projectName,
-            String projectVersion,
-            Boolean externalizableId,
-            String scanType,
-            Boolean preRelease) {
+            String subdomain, String apiToken, String scanFilePath, String projectName) {
         this.subdomain = subdomain;
         this.apiToken = apiToken;
         this.scanFilePath = scanFilePath;
         this.projectName = projectName;
-        this.projectVersion = projectVersion;
-        this.externalizableId = externalizableId;
-        this.scanType = scanType;
-        this.preRelease = preRelease;
     }
 
     public String getScanFilePath() {
@@ -74,7 +64,7 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
 
     @Override
     protected int executeAnalysis(
-            Path cltPath, String filePath, String projectName, String projectVersion, BuildListener listener)
+            Path cltPath, String filePath, String projectName, String projectVersion, TaskListener listener)
             throws IOException, InterruptedException {
         return executeThirdPartyImport(
                 cltPath, filePath, projectName, projectVersion, scanType, getPreRelease(), listener);
@@ -105,7 +95,7 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
             String projectVersion,
             String scanType,
             boolean preRelease,
-            BuildListener listener)
+            TaskListener listener)
             throws IOException, InterruptedException {
 
         // Build the command
@@ -142,20 +132,20 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
         return process.waitFor();
     }
 
-    @Symbol("finite-state-import-third-party")
+    @Symbol("finiteStateImportThirdParty")
     @Extension
     public static final class DescriptorImpl extends BaseFiniteStateDescriptor {
 
         @RequirePOST
         // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckScanFilePath(@QueryParameter String value) throws IOException, ServletException {
-            return checkRequiredValue(null, value);
+            return checkRequiredValue(value);
         }
 
         @RequirePOST
         // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckScanType(@QueryParameter String value) throws IOException, ServletException {
-            return checkRequiredValue(null, value);
+            return checkRequiredValue(value);
         }
 
         @RequirePOST

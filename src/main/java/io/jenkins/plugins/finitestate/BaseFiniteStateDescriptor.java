@@ -50,8 +50,8 @@ public abstract class BaseFiniteStateDescriptor extends BuildStepDescriptor<Publ
     /**
      * Common validation helper for required values
      */
-    protected FormValidation checkRequiredValue(Item item, String value) {
-        if (value == null || value.trim().isEmpty()) {
+    protected FormValidation checkRequiredValue(String value) {
+        if (value == null || value.isBlank()) {
             return FormValidation.error("This field is required");
         }
         return FormValidation.ok();
@@ -63,7 +63,7 @@ public abstract class BaseFiniteStateDescriptor extends BuildStepDescriptor<Publ
     @RequirePOST
     public FormValidation doCheckSubdomain(@AncestorInPath Item item, @QueryParameter String value)
             throws IOException, ServletException {
-        return checkRequiredValue(item, value);
+        return checkRequiredValue(value);
     }
 
     /**
@@ -72,7 +72,7 @@ public abstract class BaseFiniteStateDescriptor extends BuildStepDescriptor<Publ
     @RequirePOST
     public FormValidation doCheckApiToken(@AncestorInPath Item item, @QueryParameter String value)
             throws IOException, ServletException {
-        return checkRequiredValue(item, value);
+        return checkRequiredValue(value);
     }
 
     /**
@@ -81,7 +81,7 @@ public abstract class BaseFiniteStateDescriptor extends BuildStepDescriptor<Publ
     @RequirePOST
     public FormValidation doCheckProjectName(@AncestorInPath Item item, @QueryParameter String value)
             throws IOException, ServletException {
-        return checkRequiredValue(item, value);
+        return checkRequiredValue(value);
     }
 
     /**

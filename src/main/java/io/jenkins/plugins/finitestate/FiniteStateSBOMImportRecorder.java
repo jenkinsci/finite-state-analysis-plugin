@@ -4,6 +4,7 @@ import hudson.Extension;
 import hudson.Launcher;
 import hudson.model.AbstractBuild;
 import hudson.model.BuildListener;
+import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -28,21 +29,11 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     private String sbomFilePath;
 
     @DataBoundConstructor
-    public FiniteStateSBOMImportRecorder(
-            String subdomain,
-            String apiToken,
-            String sbomFilePath,
-            String projectName,
-            String projectVersion,
-            Boolean externalizableId,
-            Boolean preRelease) {
+    public FiniteStateSBOMImportRecorder(String subdomain, String apiToken, String sbomFilePath, String projectName) {
         this.subdomain = subdomain;
         this.apiToken = apiToken;
         this.sbomFilePath = sbomFilePath;
         this.projectName = projectName;
-        this.projectVersion = projectVersion;
-        this.externalizableId = externalizableId;
-        this.preRelease = preRelease;
     }
 
     public String getSbomFilePath() {
@@ -62,7 +53,7 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
 
     @Override
     protected int executeAnalysis(
-            Path cltPath, String filePath, String projectName, String projectVersion, BuildListener listener)
+            Path cltPath, String filePath, String projectName, String projectVersion, TaskListener listener)
             throws IOException, InterruptedException {
         return executeSBOMImport(cltPath, filePath, projectName, projectVersion, getPreRelease(), listener);
     }
@@ -91,7 +82,7 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
             String projectName,
             String projectVersion,
             boolean preRelease,
-            BuildListener listener)
+            TaskListener listener)
             throws IOException, InterruptedException {
 
         // Build the command
@@ -128,14 +119,14 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
         return process.waitFor();
     }
 
-    @Symbol("finite-state-import-sbom")
+    @Symbol("finiteStateImportSbom")
     @Extension
     public static final class DescriptorImpl extends BaseFiniteStateDescriptor {
 
         @RequirePOST
         // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckSbomFilePath(@QueryParameter String value) throws IOException, ServletException {
-            return checkRequiredValue(null, value);
+            return checkRequiredValue(value);
         }
 
         @Override

@@ -7,10 +7,11 @@
 
 The Finite State Analysis Jenkins Plugin provides multiple post-build actions for integrating with the Finite State platform using the Finite State CLT (Command Line Tool).
 
-This plugin gives you the ability to add Post Build actions for:
+This plugin gives you the ability to add Post Build actions and Pipeline steps for:
 
 - Freestyle projects
 - Multi-configuration projects
+- Pipeline (Declarative and Scripted)
 
 ## Features
 
@@ -42,12 +43,12 @@ Uploads binary files to Finite State for comprehensive analysis.
 
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
-| Subdomain | Your Finite State instance subdomain (e.g., "fs-yolo.dev.fstate.ninja") | `true` | `credential` | |
+| Subdomain | Your Finite State instance subdomain (e.g., "fs-yolo.dev.fstate.ninja") | `true` | `string` | |
 | API Token | A Secret text credential containing your Finite State API token | `true` | `credential` | |
 | Binary File Path | Path to the binary file to upload for analysis | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Project Version | Version of the project (recommended for tracking) | `false` | `string` | |
-| Scan Types | Select from SCA, SAST, and Configuration Analysis | `false` | `multiple` | `SCA` |
+| Scan Types | Enable one or more: Binary SCA, Binary SAST, Configuration Analysis. If none are selected, SCA is used by default. | `false` | `checkboxes` | `SCA enabled; SAST/Config disabled` |
 
 ### 2. Finite State Import SBOM
 
@@ -55,7 +56,7 @@ Imports SBOM (Software Bill of Materials) files to Finite State for analysis.
 
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
-| Subdomain | Your Finite State instance subdomain | `true` | `credential` | |
+| Subdomain | Your Finite State instance subdomain | `true` | `string` | |
 | API Token | A Secret text credential containing your Finite State API token | `true` | `credential` | |
 | SBOM File Path | Path to the SBOM file to import | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
@@ -67,7 +68,7 @@ Imports third-party scan results to Finite State for analysis.
 
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
-| Subdomain | Your Finite State instance subdomain | `true` | `credential` | |
+| Subdomain | Your Finite State instance subdomain | `true` | `string` | |
 | API Token | A Secret text credential containing your Finite State API token | `true` | `credential` | |
 | Scan File Path | Path to the scan results file | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
@@ -86,7 +87,105 @@ The plugin will:
 3. Log the results in the build output
 4. Mark the build as successful if the operation completes
 
+## Jenkins Pipeline usage
+
+You can use these steps directly in Pipelines. The step names are the Jenkins symbols shown below.
+
+### Symbols
+
+- `finiteStateAnalyzeBinary`
+- `finiteStateImportSbom`
+- `finiteStateImportThirdParty`
+
+### Declarative Pipeline example (Analyze Binary)
+
+```groovy
+pipeline {
+  agent any
+  stages {
+    stage('Finite State Binary Analysis') {
+      steps {
+        finiteStateAnalyzeBinary(
+          subdomain: 'fs-your-subdomain.finitestate.io',
+          apiToken: 'your-jenkins-string-credentials-id',
+          binaryFilePath: 'build/firmware.bin',
+          projectName: 'My Project',
+          projectVersion: '1.2.3',
+          scaEnabled: true,
+          sastEnabled: false,
+          configEnabled: false,
+          externalizableId: false,
+          preRelease: false
+        )
+      }
+    }
+  }
+}
+```
+
+### Scripted Pipeline examples
+
+- Analyze Binary
+
+```groovy
+node {
+  stage('Analyze Binary') {
+    finiteStateAnalyzeBinary subdomain: 'fs-your-subdomain.finitestate.io',
+      apiToken: 'your-jenkins-string-credentials-id',
+      binaryFilePath: 'build/firmware.bin',
+      projectName: 'My Project',
+      projectVersion: '1.2.3',
+      scaEnabled: true,
+      sastEnabled: false,
+      configEnabled: false,
+      externalizableId: false,
+      preRelease: false
+  }
+}
+```
+
+- Import SBOM
+
+```groovy
+node {
+  stage('Import SBOM') {
+    finiteStateImportSbom subdomain: 'fs-your-subdomain.finitestate.io',
+      apiToken: 'your-jenkins-string-credentials-id',
+      sbomFilePath: 'sbom/cyclonedx.json',
+      projectName: 'My Project',
+      projectVersion: '1.2.3',
+      externalizableId: false,
+      preRelease: false
+  }
+}
+```
+
+- Import 3rd Party Scan
+
+```groovy
+node {
+  stage('Import 3rd Party Scan') {
+    finiteStateImportThirdParty subdomain: 'fs-your-subdomain.finitestate.io',
+      apiToken: 'your-jenkins-string-credentials-id',
+      scanFilePath: 'reports/sonarqube.json',
+      scanType: 'sonarqube_scan',
+      projectName: 'My Project',
+      projectVersion: '1.2.3',
+      externalizableId: false,
+      preRelease: false
+  }
+}
+```
+
+Notes:
+- `apiToken` is the ID of a Secret Text credential containing your Finite State API token.
+- If you set `externalizableId: true`, the step will use the Jenkins Run Externalizable ID as the project version.
+
 ## Scan Types for Binary Analysis
+
+- These options are presented in the UI as three checkboxes: `Binary SCA`, `Binary SAST`, and `Configuration Analysis`.
+- At runtime, the plugin builds the CLI flag `--upload` by concatenating the enabled scan types as a comma-separated list (e.g., `--upload=sca,sast`).
+- If none are selected, SCA is enforced by default.
 
 - **SCA**: Binary Software Composition Analysis (default)
 - **SAST**: Binary Static Application Security Testing
@@ -133,16 +232,6 @@ For the complete list of supported tools and their expected file formats, refer 
 - Java 8 or later (for running the CLT)
 - Internet access to download the CLT from your Finite State instance
 
-## Version Compatibility
-
-This plugin is built with:
-- **Plugin Parent Version**: 5.9
-- **Jenkins Baseline**: 2.479
-- **Jenkins Version**: 2.479.3
-- **BOM Version**: 3814.v9563d972079a_
-
-The plugin is compatible with Jenkins LTS versions 2.479.3 and later. For the latest compatibility information, refer to the [Jenkins Plugin Compatibility Matrix](https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/).
-
 ## Security
 
 - API tokens are stored securely using Jenkins credentials
@@ -151,7 +240,7 @@ The plugin is compatible with Jenkins LTS versions 2.479.3 and later. For the la
 
 ## Issues
 
-Report issues and enhancements in the [Github issue tracker](https://github.com/FiniteStateInc/finite-state-jenkins-plugin/issues).
+Report issues and enhancements in the [Github issue tracker](https://github.com/jenkinsci/finite-state-jenkins-plugin/issues).
 
 ## Contributing
 
