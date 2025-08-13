@@ -1,25 +1,17 @@
+// js
 (function() {
-  function updateContainerVisibility(container) {
+  function updateContainerVisibility(checkbox, container) {
     if (!container) return;
-    var checkbox = container.querySelector('input[type="checkbox"][name$="externalizableId"]');
-    var versionContainer = container.querySelector('.fs-version-container');
+    const  versionContainer = container.querySelector('.fs-version-container');
     if (!checkbox || !versionContainer) return;
-    versionContainer.style.display = checkbox.checked ? 'none' : '';
+    versionContainer.classList.toggle('jenkins-hidden', checkbox.checked);
   }
 
-  function initializeAll() {
-    var containers = document.querySelectorAll('.finite-state-common');
-    containers.forEach(updateContainerVisibility);
-  }
-
-  document.addEventListener('DOMContentLoaded', initializeAll);
-  document.addEventListener('change', function(e) {
-    var target = e && e.target;
-    if (!target || target.type !== 'checkbox') return;
-    if (!target.name || !target.name.endsWith('externalizableId')) return;
-    var container = target.closest('.finite-state-common');
-    updateContainerVisibility(container);
+  Behaviour.specify('.fs-externalizableId', 'finite-state-common', 0, function(checkbox) {
+    const container = checkbox.closest('.finite-state-common');
+    updateContainerVisibility(checkbox, container);
+    checkbox.addEventListener('click', function() {
+      updateContainerVisibility(checkbox, container);
+    });
   });
 })();
-
-

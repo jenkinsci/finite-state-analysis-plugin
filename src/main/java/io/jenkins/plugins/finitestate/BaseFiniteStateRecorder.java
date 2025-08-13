@@ -2,10 +2,9 @@ package io.jenkins.plugins.finitestate;
 
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.common.StandardCredentials;
+import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
-import hudson.model.AbstractBuild;
-import hudson.model.BuildListener;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.tasks.Recorder;
@@ -90,15 +89,6 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     }
 
     /**
-     * Get file from workspace - common utility method (freestyle builds)
-     */
-    protected FilePath getFileFromWorkspace(AbstractBuild build, String relativeFilePath, BuildListener listener)
-            throws IOException, InterruptedException {
-        FilePath workspace = build.getWorkspace();
-        return getFileFromWorkspace(workspace, relativeFilePath, (TaskListener) listener);
-    }
-
-    /**
      * Get file from workspace - common utility method (pipeline and freestyle)
      */
     protected FilePath getFileFromWorkspace(FilePath workspace, String relativeFilePath, TaskListener listener)
@@ -110,13 +100,6 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
         }
         listener.getLogger().println("ERROR: Could not determine workspace path");
         return null;
-    }
-
-    /**
-     * Get secret values from credentials - common utility method (freestyle builds)
-     */
-    protected String getSecretTextValue(AbstractBuild build, String credentialId) {
-        return getSecretTextValue((Run<?, ?>) build, credentialId);
     }
 
     /**
@@ -226,10 +209,10 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     protected abstract String getFilePathValue();
 
     /**
-     * Pipeline entry point (and also supported in freestyle). Marks build as failed on error.
+     * Preferred entry point including environment variables. Marks build as failed on error.
      */
     @Override
-    public void perform(Run<?, ?> run, FilePath workspace, Launcher launcher, TaskListener listener)
+    public void perform(Run<?, ?> run, FilePath workspace, EnvVars env, Launcher launcher, TaskListener listener)
             throws InterruptedException, IOException {
         boolean ok = FiniteStateExecutionFramework.executeAnalysis(this, run, workspace, launcher, listener);
         if (!ok) {

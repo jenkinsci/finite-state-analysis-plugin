@@ -3,8 +3,6 @@ package io.jenkins.plugins.finitestate;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
-import hudson.model.AbstractBuild;
-import hudson.model.BuildListener;
 import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import java.io.IOException;
@@ -41,12 +39,6 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     @DataBoundSetter
     public void setSbomFilePath(String sbomFilePath) {
         this.sbomFilePath = sbomFilePath;
-    }
-
-    @Override
-    public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener)
-            throws InterruptedException, IOException {
-        return FiniteStateExecutionFramework.executeAnalysis(this, build, launcher, listener);
     }
 
     @Override
