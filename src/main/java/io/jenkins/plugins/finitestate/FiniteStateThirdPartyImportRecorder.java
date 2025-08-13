@@ -3,8 +3,6 @@ package io.jenkins.plugins.finitestate;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
-import hudson.model.AbstractBuild;
-import hudson.model.BuildListener;
 import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
@@ -51,12 +49,6 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
     @DataBoundSetter
     public void setScanType(String scanType) {
         this.scanType = scanType;
-    }
-
-    @Override
-    public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener)
-            throws InterruptedException, IOException {
-        return FiniteStateExecutionFramework.executeAnalysis(this, build, launcher, listener);
     }
 
     @Override
