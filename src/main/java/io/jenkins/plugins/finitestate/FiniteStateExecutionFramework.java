@@ -21,11 +21,14 @@ public class FiniteStateExecutionFramework {
     /**
      * Execute a Finite State analysis with common error handling and logging.
      *
-     * @param recorder The recorder instance
-     * @param build The build context
-     * @param launcher The launcher
-     * @param listener The build listener
-     * @return true if successful, false otherwise
+     * @param recorder Recorder that encapsulates analysis configuration and helpers
+     * @param run Jenkins run/build context used for environment and logging
+     * @param workspace Workspace directory where files and the CLT are accessed
+     * @param launcher Jenkins launcher used to execute external processes
+     * @param listener Build/task listener for console logging
+     * @return true when the analysis is triggered successfully (exit code 0 or 1), false on failures
+     * @throws InterruptedException if execution is interrupted
+     * @throws IOException if CLT download or file I/O fails
      */
     public static boolean executeAnalysis(
             BaseFiniteStateRecorder recorder,
@@ -105,17 +108,35 @@ public class FiniteStateExecutionFramework {
     }
 
     /**
-     * Backward-compatible shim for freestyle builds using AbstractBuild API.
+     * Backward-compatible shim for freestyle builds using {@link AbstractBuild} API.
+     *
+     * @param recorder Recorder that encapsulates analysis configuration and helpers
+     * @param build Freestyle build context
+     * @param launcher Jenkins launcher used to execute external processes
+     * @param listener Build listener for console logging
+     * @return result of delegated execution
+     * @throws InterruptedException if execution is interrupted
+     * @throws IOException if CLT download or file I/O fails
      */
     public static boolean executeAnalysis(
-            BaseFiniteStateRecorder recorder, AbstractBuild build, Launcher launcher, BuildListener listener)
+            BaseFiniteStateRecorder recorder, AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener)
             throws InterruptedException, IOException {
         FilePath workspace = build.getWorkspace();
         return executeAnalysis(recorder, (Run<?, ?>) build, workspace, launcher, (TaskListener) listener);
     }
 
     /**
-     * Handle the exit code from the analysis execution
+     * Handle the exit code from the analysis execution.
+     *
+     * <p>Exit code 0 is treated as success, 1 as a successful run with warnings (vulnerabilities
+     * found), and any other code as error.</p>
+     *
+     * @param recorder Recorder for results aggregation and metadata
+     * @param run Current run used to attach consolidated result
+     * @param listener Listener for console output
+     * @param exitCode Exit code produced by the CLT execution
+     * @param parsedVersion Computed project version string
+     * @return true for success/warning exit codes (0 or 1), false for error
      */
     private static boolean handleExitCode(
             BaseFiniteStateRecorder recorder,
@@ -159,7 +180,12 @@ public class FiniteStateExecutionFramework {
     }
 
     /**
-     * Build success message for consolidated results
+     * Build success message for consolidated results.
+     *
+     * @param recorder Recorder providing context such as analysis type and file path field name
+     * @param parsedVersion Computed project version string
+     * @param exitCode Exit code from the CLT execution
+     * @return Formatted message string
      */
     private static String buildSuccessMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
         return "Finite State " + recorder.getAnalysisType() + " started successfully!\n"
@@ -169,7 +195,12 @@ public class FiniteStateExecutionFramework {
     }
 
     /**
-     * Build warning message for consolidated results
+     * Build warning message for consolidated results.
+     *
+     * @param recorder Recorder providing context such as analysis type and file path field name
+     * @param parsedVersion Computed project version string
+     * @param exitCode Exit code from the CLT execution
+     * @return Formatted message string
      */
     private static String buildWarningMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
         return "Finite State " + recorder.getAnalysisType() + " completed with vulnerabilities found.\n"
@@ -179,7 +210,12 @@ public class FiniteStateExecutionFramework {
     }
 
     /**
-     * Build error message for consolidated results
+     * Build error message for consolidated results.
+     *
+     * @param recorder Recorder providing context such as analysis type and file path field name
+     * @param parsedVersion Computed project version string
+     * @param exitCode Exit code from the CLT execution
+     * @return Formatted message string
      */
     private static String buildErrorMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
         return "Finite State " + recorder.getAnalysisType() + " failed with exit code: " + exitCode + "\n"
