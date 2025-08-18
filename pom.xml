@@ -11,7 +11,7 @@
 
   <groupId>io.jenkins.plugins</groupId>
   <artifactId>finite-state-analysis</artifactId>
-  <version>${changelist}</version>
+  <version>${revision}${changelist}</version>
   <packaging>hpi</packaging>
 
   <name>Finite State Analysis</name>
