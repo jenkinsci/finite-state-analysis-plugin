@@ -102,7 +102,14 @@ public class FiniteStateExecutionFramework {
         // Execute the analysis
         listener.getLogger().println("Executing Finite State " + recorder.getAnalysisType() + "...");
         int exitCode = recorder.executeAnalysis(
-                cltPath, fileObj, recorder.getProjectName(), parsedVersion, workspace, launcher, listener);
+                cltPath,
+                fileObj,
+                recorder.getProjectName(),
+                parsedVersion,
+                parsedApiToken,
+                workspace,
+                launcher,
+                listener);
 
         return handleExitCode(recorder, run, listener, exitCode, parsedVersion);
     }
