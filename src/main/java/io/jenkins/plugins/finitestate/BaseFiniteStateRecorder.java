@@ -181,6 +181,15 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     }
 
     /**
+     * Build the environment variables required by the CLT for authentication and domain routing.
+     */
+    protected String[] buildCLTEnvironment(String apiToken) {
+        return new String[] {
+            "FINITE_STATE_AUTH_TOKEN=" + apiToken, "FINITE_STATE_DOMAIN=" + subdomain,
+        };
+    }
+
+    /**
      * Abstract method for executing the specific analysis
      */
     protected abstract int executeAnalysis(
@@ -188,6 +197,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
             FilePath filePath,
             String projectName,
             String projectVersion,
+            String apiToken,
             FilePath workspace,
             Launcher launcher,
             TaskListener listener)
