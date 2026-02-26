@@ -1,6 +1,6 @@
 # [Finite State Analysis](https://finitestate.io) Jenkins Plugin
 
-![Finite state logo](FS-Logo.png)
+![Finite state logo](FS-Logo.jpeg)
 [finitestate.io](https://finitestate.io)
 
 ## Introduction
