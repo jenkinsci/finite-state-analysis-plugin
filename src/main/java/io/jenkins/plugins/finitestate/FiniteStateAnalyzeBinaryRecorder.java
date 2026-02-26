@@ -77,6 +77,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
             FilePath filePath,
             String projectName,
             String projectVersion,
+            String apiToken,
             FilePath workspace,
             Launcher launcher,
             TaskListener listener)
@@ -88,6 +89,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
                 projectVersion,
                 buildScanTypesString(),
                 getPreRelease(),
+                apiToken,
                 workspace,
                 launcher,
                 listener);
@@ -142,6 +144,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
             String projectVersion,
             String scanTypes,
             boolean preRelease,
+            String apiToken,
             FilePath workspace,
             Launcher launcher,
             TaskListener listener)
@@ -171,9 +174,9 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
 
         listener.getLogger().println("Executing command: " + String.join(" ", command));
 
-        // Execute remotely using Launcher
         Launcher.ProcStarter starter = launcher.launch();
         starter.cmds(command);
+        starter.envs(buildCLTEnvironment(apiToken));
         starter.stdout(listener.getLogger());
         starter.stderr(listener.getLogger());
         starter.pwd(workspace);

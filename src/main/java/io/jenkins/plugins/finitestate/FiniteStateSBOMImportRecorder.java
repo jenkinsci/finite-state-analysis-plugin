@@ -47,12 +47,21 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
             FilePath filePath,
             String projectName,
             String projectVersion,
+            String apiToken,
             FilePath workspace,
             Launcher launcher,
             TaskListener listener)
             throws IOException, InterruptedException {
         return executeSBOMImport(
-                cltPath, filePath, projectName, projectVersion, getPreRelease(), workspace, launcher, listener);
+                cltPath,
+                filePath,
+                projectName,
+                projectVersion,
+                getPreRelease(),
+                apiToken,
+                workspace,
+                launcher,
+                listener);
     }
 
     @Override
@@ -79,12 +88,12 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
             String projectName,
             String projectVersion,
             boolean preRelease,
+            String apiToken,
             FilePath workspace,
             Launcher launcher,
             TaskListener listener)
             throws IOException, InterruptedException {
 
-        // Build the command
         List<String> command = new ArrayList<>();
         command.add("java");
         command.add("-jar");
@@ -102,6 +111,7 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
 
         Launcher.ProcStarter starter = launcher.launch();
         starter.cmds(command);
+        starter.envs(buildCLTEnvironment(apiToken));
         starter.stdout(listener.getLogger());
         starter.stderr(listener.getLogger());
         starter.pwd(workspace);

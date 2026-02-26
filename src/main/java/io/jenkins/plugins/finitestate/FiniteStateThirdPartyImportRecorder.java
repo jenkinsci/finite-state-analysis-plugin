@@ -57,6 +57,7 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
             FilePath filePath,
             String projectName,
             String projectVersion,
+            String apiToken,
             FilePath workspace,
             Launcher launcher,
             TaskListener listener)
@@ -68,6 +69,7 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
                 projectVersion,
                 scanType,
                 getPreRelease(),
+                apiToken,
                 workspace,
                 launcher,
                 listener);
@@ -98,12 +100,12 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
             String projectVersion,
             String scanType,
             boolean preRelease,
+            String apiToken,
             FilePath workspace,
             Launcher launcher,
             TaskListener listener)
             throws IOException, InterruptedException {
 
-        // Build the command
         List<String> command = new ArrayList<>();
         command.add("java");
         command.add("-jar");
@@ -121,6 +123,7 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
 
         Launcher.ProcStarter starter = launcher.launch();
         starter.cmds(command);
+        starter.envs(buildCLTEnvironment(apiToken));
         starter.stdout(listener.getLogger());
         starter.stderr(listener.getLogger());
         starter.pwd(workspace);
