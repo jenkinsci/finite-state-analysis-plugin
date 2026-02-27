@@ -83,3 +83,91 @@ Command to install `xcode-select` in Mac:
 ```
 xcode-select --install
 ```
+
+### Publishing a new release to the Jenkins Update Center
+
+This plugin is published from the [jenkinsci/finite-state-analysis-plugin](https://github.com/jenkinsci/finite-state-analysis-plugin) fork, which is the official Jenkins community repository. The upstream development happens in [FiniteStateInc/finite-state-jenkins-plugin](https://github.com/FiniteStateInc/finite-state-jenkins-plugin).
+
+#### Repository relationship
+
+| Repository | Purpose |
+|---|---|
+| `FiniteStateInc/finite-state-jenkins-plugin` | Upstream — where development happens |
+| `jenkinsci/finite-state-analysis-plugin` | Fork — where releases are published from |
+
+#### How versioning works
+
+Versions are computed automatically by the `git-changelist-maven-extension` (configured in `.mvn/extensions.xml`). There is no manual version bumping — the version is derived from the commit history.
+
+#### Step-by-step release process
+
+1. **Push your changes to the upstream repo** (`FiniteStateInc/finite-state-jenkins-plugin`) via a pull request as usual.
+
+2. **Sync the fork with upstream** by opening a PR from the upstream into the fork:
+   - Go to: https://github.com/jenkinsci/finite-state-analysis-plugin/compare/main...FiniteStateInc:finite-state-jenkins-plugin:main
+   - Set **base** to `jenkinsci/finite-state-analysis-plugin` → `main`
+   - Set **head** to `FiniteStateInc/finite-state-jenkins-plugin` → `main`
+   - Give the PR a descriptive title (e.g., "Sync fork with upstream")
+   - Click **Create pull request**
+
+3. **Merge the PR** on the `jenkinsci` repo:
+   - Verify the green "Able to merge" checkmark
+   - Click **Merge pull request** → **Confirm merge**
+   - Wait for all CI checks to pass (Jenkins runs tests on Linux JDK 21 + Windows JDK 17)
+
+4. **Trigger the release** by running the CD workflow manually:
+   - Go to [Actions → cd](https://github.com/jenkinsci/finite-state-analysis-plugin/actions/workflows/cd.yaml)
+   - Click **Run workflow**
+   - Leave `validate_only` **unchecked** (false) to publish a real release
+   - Click **Run workflow**
+
+5. **Verify the release**:
+   - Check the [Releases page](https://github.com/jenkinsci/finite-state-analysis-plugin/releases) for the new version
+   - The plugin will be available on the [Jenkins Update Center](https://plugins.jenkins.io/finite-state-analysis/) shortly after
+
+#### Dry-run (validate only)
+
+To preview release notes without actually publishing, run the CD workflow with `validate_only` checked (true). This drafts a "next" release without publishing it.
+
+#### Troubleshooting
+
+- If the CD workflow does not trigger automatically after merging, run it manually as described in step 4.
+- Check the [Actions tab](https://github.com/jenkinsci/finite-state-analysis-plugin/actions) for build logs if something fails.
+- The `MAVEN_USERNAME` and `MAVEN_TOKEN` secrets must be configured in the `jenkinsci` repo settings for publishing to work.
+
+### Managing developer access and code reviews
+
+#### CODEOWNERS
+
+The file `.github/CODEOWNERS` in the `jenkinsci` fork controls who gets automatically requested for review on every PR:
+
+```
+* @jenkinsci/finite-state-analysis-plugin-developers
+```
+
+This means all PRs require an approving review from a member of the `finite-state-analysis-plugin-developers` team before they can be merged.
+
+**Limitation:** CODEOWNERS only supports teams and users within the `jenkinsci` organization. You cannot reference teams from other organizations (e.g., `@FiniteStateInc/...`).
+
+#### Adding new developers
+
+New developers need to be members of the `jenkinsci` GitHub organization and the `finite-state-analysis-plugin-developers` team in order to review and merge PRs.
+
+Since `jenkinsci` is managed by the Jenkins infrastructure team, you cannot directly invite people. Instead, use the **Repository Permissions Updater**:
+
+1. Go to [jenkins-infra/repository-permissions-updater](https://github.com/jenkins-infra/repository-permissions-updater)
+2. Find or create the file `permissions/plugin-finite-state-analysis.yml`
+3. Submit a PR adding the new developer's GitHub username:
+
+```yaml
+---
+name: "finite-state-analysis"
+github: "jenkinsci/finite-state-analysis-plugin"
+developers:
+  - "cpfarherFinitestate"
+  - "newDeveloperGitHubUsername"
+```
+
+4. Once a Jenkins admin merges the PR, the user is invited to the `jenkinsci` org and added to the plugin's developer team automatically.
+
+Alternatively, you can post a request at [community.jenkins.io](https://community.jenkins.io) in the **Hosting** category with the plugin name and the GitHub username to add.
