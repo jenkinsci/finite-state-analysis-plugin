@@ -48,7 +48,7 @@ Uploads binary files to Finite State for comprehensive analysis.
 | Binary File Path | Path to the binary file to upload for analysis | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Project Version | Version of the project (recommended for tracking) | `false` | `string` | |
-| Scan Types | Enable one or more: Binary SCA, Binary SAST, Configuration Analysis. If none are selected, SCA is used by default. | `false` | `checkboxes` | `SCA enabled; SAST/Config disabled` |
+| Scan Types | Enable one or more: Binary SCA, Binary SAST, Configuration Analysis, Reachability Analysis. If none are selected, SCA is used by default. | `false` | `checkboxes` | `SCA and Reachability enabled; SAST/Config disabled` |
 
 ### 2. Finite State Import SBOM
 
@@ -116,6 +116,7 @@ pipeline {
           scaEnabled: true,
           sastEnabled: false,
           configEnabled: false,
+          reachabilityEnabled: true,
           externalizableId: false,
           preRelease: false
         )
@@ -183,13 +184,14 @@ Notes:
 
 ## Scan Types for Binary Analysis
 
-- These options are presented in the UI as three checkboxes: `Binary SCA`, `Binary SAST`, and `Configuration Analysis`.
-- At runtime, the plugin builds the CLI flag `--upload` by concatenating the enabled scan types as a comma-separated list (e.g., `--upload=sca,sast`).
+- These options are presented in the UI as four checkboxes: `Binary SCA`, `Binary SAST`, `Configuration Analysis`, and `Reachability Analysis`.
+- At runtime, the plugin builds the CLI flag `--upload` by concatenating the enabled scan types as a comma-separated list (e.g., `--upload=sca,vulnerability_analysis`).
 - If none are selected, SCA is enforced by default.
 
-- **SCA**: Binary Software Composition Analysis (default)
+- **SCA**: Binary Software Composition Analysis (enabled by default)
 - **SAST**: Binary Static Application Security Testing
 - **Configuration Analysis**: Configuration and security analysis
+- **Reachability Analysis**: Performs reachability analysis on identified vulnerabilities (enabled by default, requires Binary SCA)
 
 ## Supported Third-Party Scanning Tools
 

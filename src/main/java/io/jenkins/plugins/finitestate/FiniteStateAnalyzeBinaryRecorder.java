@@ -25,6 +25,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     private Boolean scaEnabled;
     private Boolean sastEnabled;
     private Boolean configEnabled;
+    private Boolean reachabilityEnabled;
 
     @DataBoundConstructor
     public FiniteStateAnalyzeBinaryRecorder(
@@ -51,6 +52,10 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
         return configEnabled != null ? configEnabled : false;
     }
 
+    public boolean getReachabilityEnabled() {
+        return reachabilityEnabled != null ? reachabilityEnabled : true;
+    }
+
     @DataBoundSetter
     public void setBinaryFilePath(String binaryFilePath) {
         this.binaryFilePath = binaryFilePath;
@@ -69,6 +74,11 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     @DataBoundSetter
     public void setConfigEnabled(boolean configEnabled) {
         this.configEnabled = configEnabled;
+    }
+
+    @DataBoundSetter
+    public void setReachabilityEnabled(boolean reachabilityEnabled) {
+        this.reachabilityEnabled = reachabilityEnabled;
     }
 
     @Override
@@ -124,6 +134,9 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
         }
         if (getConfigEnabled()) {
             selectedTypes.add("config");
+        }
+        if (getReachabilityEnabled() && getScaEnabled()) {
+            selectedTypes.add("vulnerability_analysis");
         }
 
         // If no scans are selected, default to sca (required)

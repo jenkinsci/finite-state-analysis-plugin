@@ -11,7 +11,7 @@
       Select one or more scans to perform on this binary. Binary SCA is enabled by default.
     </div>
 
-    <f:checkbox title="Binary SCA" field="scaEnabled" default="true"/>
+    <f:checkbox title="Binary SCA" field="scaEnabled" default="true" class="fs-scaEnabled"/>
     <div class="jenkins-!-font-size-small jenkins-!-margin-bottom-3">
       Generates an SBOM as a CycloneDX JSON document.
     </div>
@@ -22,8 +22,15 @@
     </div>
 
     <f:checkbox title="Configuration Analysis" field="configEnabled" default="false"/>
-    <div class="jenkins-!-font-size-small">
+    <div class="jenkins-!-font-size-small jenkins-!-margin-bottom-3">
       Finds configuration issues like hardcoded secrets.
+    </div>
+
+    <div class="fs-reachability-container">
+      <f:checkbox title="Reachability Analysis" field="reachabilityEnabled" default="true" class="fs-reachabilityEnabled"/>
+      <div class="jenkins-!-font-size-small">
+        Performs reachability analysis on identified vulnerabilities. Requires Binary SCA.
+      </div>
     </div>
   </div>
 </j:jelly>

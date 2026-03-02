@@ -15,24 +15,26 @@ public class FiniteStateAnalyzeBinaryRecorderTest {
         recorder.setScaEnabled(true);
         recorder.setSastEnabled(true);
         recorder.setConfigEnabled(true);
+        recorder.setReachabilityEnabled(true);
 
         String result = getScanTypesString(recorder);
-        assertEquals("sca,sast,config", result);
+        assertEquals("sca,sast,config,vulnerability_analysis", result);
 
-        // Test with only SCA enabled (default)
+        // Test with only SCA enabled (default) - reachability defaults to true
         recorder = new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
         recorder.setScaEnabled(true);
         recorder.setSastEnabled(false);
         recorder.setConfigEnabled(false);
 
         result = getScanTypesString(recorder);
-        assertEquals("sca", result);
+        assertEquals("sca,vulnerability_analysis", result);
 
-        // Test with SCA and SAST enabled
+        // Test with SCA and SAST enabled, reachability disabled
         recorder = new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
         recorder.setScaEnabled(true);
         recorder.setSastEnabled(true);
         recorder.setConfigEnabled(false);
+        recorder.setReachabilityEnabled(false);
 
         result = getScanTypesString(recorder);
         assertEquals("sca,sast", result);
@@ -42,9 +44,32 @@ public class FiniteStateAnalyzeBinaryRecorderTest {
         recorder.setScaEnabled(false);
         recorder.setSastEnabled(false);
         recorder.setConfigEnabled(false);
+        recorder.setReachabilityEnabled(false);
 
         result = getScanTypesString(recorder);
         assertEquals("sca", result);
+    }
+
+    @Test
+    public void testReachabilityRequiresSca() throws Exception {
+        // Reachability enabled but SCA disabled - should NOT include vulnerability_analysis
+        FiniteStateAnalyzeBinaryRecorder recorder =
+                new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
+        recorder.setScaEnabled(false);
+        recorder.setSastEnabled(false);
+        recorder.setConfigEnabled(false);
+        recorder.setReachabilityEnabled(true);
+
+        String result = getScanTypesString(recorder);
+        assertEquals("sca", result);
+        assertFalse(result.contains("vulnerability_analysis"));
+    }
+
+    @Test
+    public void testReachabilityDefaultsToTrue() {
+        FiniteStateAnalyzeBinaryRecorder recorder =
+                new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
+        assertTrue("Reachability should default to true", recorder.getReachabilityEnabled());
     }
 
     private String getScanTypesString(FiniteStateAnalyzeBinaryRecorder recorder) throws Exception {
