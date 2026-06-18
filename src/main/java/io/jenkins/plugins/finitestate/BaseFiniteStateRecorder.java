@@ -66,7 +66,9 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     }
 
     public boolean getWaitForCompletion() {
-        return waitForCompletion != null ? waitForCompletion : true; // FR-7: default true (blocking)
+        // Default false: submit the scan and return (the CLT-style flow) so the build doesn't block;
+        // the user follows progress in the Finite State UI. Enable to block on terminal status.
+        return waitForCompletion != null ? waitForCompletion : false;
     }
 
     public int getPollTimeoutMinutes() {

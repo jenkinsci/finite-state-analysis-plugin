@@ -1,6 +1,7 @@
 <div>
-  When enabled (the default), the build step polls the Finite State API until the scan reaches a
-  terminal state (completed or error) or the poll timeout elapses, then sets the build result
-  accordingly. When disabled, the step returns as soon as the upload is accepted and the scan is
-  queued, logging the scan ID and a link to view progress in the Finite State UI.
+  When disabled (the default), the build step returns as soon as the upload is accepted and the scan
+  is queued, logging the scan ID and a link to follow progress in the Finite State UI — the build
+  does not block. Enable it to make the step poll the Finite State API until the scan reaches a
+  terminal state (completed or error) or the poll timeout elapses, and set the build result
+  accordingly.
 </div>

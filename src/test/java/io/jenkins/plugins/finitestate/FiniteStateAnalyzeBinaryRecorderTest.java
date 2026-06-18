@@ -69,7 +69,7 @@ public class FiniteStateAnalyzeBinaryRecorderTest {
     public void waitForCompletionDefaultsAreApplied() {
         FiniteStateAnalyzeBinaryRecorder recorder =
                 new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
-        assertTrue("waitForCompletion should default to true", recorder.getWaitForCompletion());
+        assertFalse("waitForCompletion should default to false (submit and return)", recorder.getWaitForCompletion());
         assertEquals(30, recorder.getPollTimeoutMinutes());
     }
 }

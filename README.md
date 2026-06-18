@@ -50,8 +50,8 @@ Uploads binary files to Finite State for comprehensive analysis.
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Project Version | Version of the project (recommended for tracking) | `false` | `string` | |
 | Scan Types | Enable one or more: Binary SCA, Binary SAST, Configuration Analysis, Reachability Analysis. If none are selected, SCA is used by default. | `false` | `checkboxes` | `SCA and Reachability enabled; SAST/Config disabled` |
-| Wait for completion | Block the build until the scan reaches a terminal state, then set the build result accordingly | `false` | `boolean` | `true` |
-| Poll timeout (minutes) | Maximum minutes to wait for completion before failing with the scan ID and a link | `false` | `integer` | `30` |
+| Wait for completion | Optional. When enabled, block the build until the scan reaches a terminal state and set the build result accordingly. When disabled (default), the build returns once the scan is submitted and you follow progress in the Finite State UI. | `false` | `boolean` | `false` |
+| Poll timeout (minutes) | Maximum minutes to wait for completion when "Wait for completion" is enabled, before failing with the scan ID and a link | `false` | `integer` | `30` |
 
 ### 2. Finite State Import SBOM
 
@@ -64,8 +64,8 @@ Imports SBOM (Software Bill of Materials) files to Finite State for analysis.
 | SBOM File Path | Path to the SBOM file to import (CycloneDX or SPDX; format auto-detected) | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Project Version | Version of the project | `false` | `string` | |
-| Wait for completion | Block the build until the scan reaches a terminal state, then set the build result accordingly | `false` | `boolean` | `true` |
-| Poll timeout (minutes) | Maximum minutes to wait for completion before failing with the scan ID and a link | `false` | `integer` | `30` |
+| Wait for completion | Optional. When enabled, block the build until the scan reaches a terminal state and set the build result accordingly. When disabled (default), the build returns once the scan is submitted and you follow progress in the Finite State UI. | `false` | `boolean` | `false` |
+| Poll timeout (minutes) | Maximum minutes to wait for completion when "Wait for completion" is enabled, before failing with the scan ID and a link | `false` | `integer` | `30` |
 
 ### 3. Finite State Import 3rd Party Scan
 
@@ -79,8 +79,8 @@ Imports third-party scan results to Finite State for analysis.
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Scan Type | Type of third-party scanner (e.g., GitLab SAST, SonarQube, Snyk, etc.) | `true` | `dropdown` | |
 | Project Version | Version of the project | `false` | `string` | |
-| Wait for completion | Block the build until the scan reaches a terminal state, then set the build result accordingly | `false` | `boolean` | `true` |
-| Poll timeout (minutes) | Maximum minutes to wait for completion before failing with the scan ID and a link | `false` | `integer` | `30` |
+| Wait for completion | Optional. When enabled, block the build until the scan reaches a terminal state and set the build result accordingly. When disabled (default), the build returns once the scan is submitted and you follow progress in the Finite State UI. | `false` | `boolean` | `false` |
+| Poll timeout (minutes) | Maximum minutes to wait for completion when "Wait for completion" is enabled, before failing with the scan ID and a link | `false` | `integer` | `30` |
 
 ## Usage
 
@@ -91,9 +91,8 @@ Imports third-party scan results to Finite State for analysis.
 The plugin will:
 1. Resolve (or create) the project and version in Finite State by name — honoring the Pre-Release flag on version creation
 2. Upload the artifact directly to Finite State storage and trigger processing (binary analysis, SBOM import, or third-party import)
-3. Optionally poll the scan until it reaches a terminal state (when "Wait for completion" is enabled)
-4. Log the resolved project ID, version ID, scan ID(s), and a link to the results in the Finite State UI
-5. Mark the build successful when the scan completes (or is accepted, when not waiting), and failed on a scan error or timeout
+3. Log the resolved project ID, version ID, scan ID(s), and a link to the results in the Finite State UI
+4. By default, return success once the scan is submitted — you follow progress in the Finite State UI (the same flow the CLT used). Optionally enable "Wait for completion" to block until the scan reaches a terminal state and fail the build on a scan error or timeout
 
 ### How it talks to Finite State
 
@@ -131,7 +130,7 @@ pipeline {
           reachabilityEnabled: true,
           externalizableId: false,
           preRelease: false,
-          waitForCompletion: true,
+          waitForCompletion: false,
           pollTimeoutMinutes: 30
         )
       }
@@ -193,7 +192,7 @@ Notes:
 
 - If you set `externalizableId: true`, the step will use the Jenkins Run Externalizable ID as the project version. If `externalizableId` is `false`, `projectVersion` is required (the build fails with a clear message if both are empty).
 
-- `waitForCompletion` (default `true`) makes the step block until the scan reaches a terminal state and sets the build result accordingly; set it to `false` to return as soon as the upload is accepted. `pollTimeoutMinutes` (default `30`) bounds the wait. These optional fields apply to all three steps.
+- `waitForCompletion` (default `false`) returns as soon as the scan is submitted, logging the scan ID and UI link so you can follow progress in the Finite State UI. Set it to `true` to block until the scan reaches a terminal state and set the build result accordingly; `pollTimeoutMinutes` (default `30`) bounds that wait. These optional fields apply to all three steps.
 
 - For the `scanType` field in the `finiteStateImportThirdParty` step, you must select one of the supported scan types from the list in section Third-Party scanType values (exact identifiers) below. The value you provide should match exactly one of the identifiers in the "Third-Party scanType values" table. This ensures your scan is properly recognized and processed by the Finite State platform.
 
