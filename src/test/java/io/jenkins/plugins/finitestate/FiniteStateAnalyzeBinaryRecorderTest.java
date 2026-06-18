@@ -1,80 +1,75 @@
 package io.jenkins.plugins.finitestate;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
-import java.lang.reflect.Method;
+import net.sf.json.JSONObject;
 import org.junit.Test;
 
+/**
+ * Verifies that the four binary checkboxes map onto the v0 {@code BinaryScanConfig} exactly as the
+ * API expects (see FiniteStateApiClient#buildBinaryScanConfig and binary-scan.service.ts).
+ */
 public class FiniteStateAnalyzeBinaryRecorderTest {
 
-    @Test
-    public void testScanTypesConversion() throws Exception {
-        // Test with all scan types enabled
+    private JSONObject configFor(boolean sca, boolean sast, boolean config, boolean reachability) {
         FiniteStateAnalyzeBinaryRecorder recorder =
                 new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
-        recorder.setScaEnabled(true);
-        recorder.setSastEnabled(true);
-        recorder.setConfigEnabled(true);
-        recorder.setReachabilityEnabled(true);
-
-        String result = getScanTypesString(recorder);
-        assertEquals("sca,sast,config,vulnerability_analysis", result);
-
-        // Test with only SCA enabled (default) - reachability defaults to true
-        recorder = new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
-        recorder.setScaEnabled(true);
-        recorder.setSastEnabled(false);
-        recorder.setConfigEnabled(false);
-
-        result = getScanTypesString(recorder);
-        assertEquals("sca,vulnerability_analysis", result);
-
-        // Test with SCA and SAST enabled, reachability disabled
-        recorder = new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
-        recorder.setScaEnabled(true);
-        recorder.setSastEnabled(true);
-        recorder.setConfigEnabled(false);
-        recorder.setReachabilityEnabled(false);
-
-        result = getScanTypesString(recorder);
-        assertEquals("sca,sast", result);
-
-        // Test with none enabled (should default to sca)
-        recorder = new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
-        recorder.setScaEnabled(false);
-        recorder.setSastEnabled(false);
-        recorder.setConfigEnabled(false);
-        recorder.setReachabilityEnabled(false);
-
-        result = getScanTypesString(recorder);
-        assertEquals("sca", result);
+        recorder.setScaEnabled(sca);
+        recorder.setSastEnabled(sast);
+        recorder.setConfigEnabled(config);
+        recorder.setReachabilityEnabled(reachability);
+        FiniteStateScanRequest req = new FiniteStateScanRequest();
+        recorder.configureRequest(req);
+        return FiniteStateApiClient.buildBinaryScanConfig(req);
     }
 
     @Test
-    public void testReachabilityRequiresSca() throws Exception {
-        // Reachability enabled but SCA disabled - should NOT include vulnerability_analysis
-        FiniteStateAnalyzeBinaryRecorder recorder =
-                new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
-        recorder.setScaEnabled(false);
-        recorder.setSastEnabled(false);
-        recorder.setConfigEnabled(false);
-        recorder.setReachabilityEnabled(true);
-
-        String result = getScanTypesString(recorder);
-        assertEquals("sca", result);
-        assertFalse(result.contains("vulnerability_analysis"));
+    public void allEnabledMapsAllFields() {
+        JSONObject cfg = configFor(true, true, true, true);
+        assertTrue(cfg.getBoolean("configurationAnalysis"));
+        assertTrue(cfg.getBoolean("vulnerabilityAnalysis"));
+        assertTrue(cfg.getBoolean("binarySast"));
+        assertFalse("pythonSast is not exposed in the UI and is always false", cfg.getBoolean("pythonSast"));
     }
 
     @Test
-    public void testReachabilityDefaultsToTrue() {
+    public void defaultSelectionEnablesVulnerabilityAnalysisOnly() {
+        // Defaults: SCA=true, SAST=false, Config=false, Reachability=true.
+        JSONObject cfg = configFor(true, false, false, true);
+        assertFalse(cfg.getBoolean("configurationAnalysis"));
+        assertTrue(cfg.getBoolean("vulnerabilityAnalysis"));
+        assertFalse(cfg.getBoolean("binarySast"));
+    }
+
+    @Test
+    public void reachabilityRequiresSca() {
+        // Reachability on but SCA off → vulnerabilityAnalysis must be false.
+        JSONObject cfg = configFor(false, false, false, true);
+        assertFalse(cfg.getBoolean("vulnerabilityAnalysis"));
+    }
+
+    @Test
+    public void sastMapsToBinarySast() {
+        JSONObject cfg = configFor(true, true, false, false);
+        assertTrue(cfg.getBoolean("binarySast"));
+        assertFalse(cfg.getBoolean("configurationAnalysis"));
+        assertFalse(cfg.getBoolean("vulnerabilityAnalysis"));
+    }
+
+    @Test
+    public void reachabilityDefaultsToTrue() {
         FiniteStateAnalyzeBinaryRecorder recorder =
                 new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
         assertTrue("Reachability should default to true", recorder.getReachabilityEnabled());
     }
 
-    private String getScanTypesString(FiniteStateAnalyzeBinaryRecorder recorder) throws Exception {
-        Method method = FiniteStateAnalyzeBinaryRecorder.class.getDeclaredMethod("buildScanTypesString");
-        method.setAccessible(true);
-        return (String) method.invoke(recorder);
+    @Test
+    public void waitForCompletionDefaultsAreApplied() {
+        FiniteStateAnalyzeBinaryRecorder recorder =
+                new FiniteStateAnalyzeBinaryRecorder("test", "token", "path", "project");
+        assertTrue("waitForCompletion should default to true", recorder.getWaitForCompletion());
+        assertEquals(30, recorder.getPollTimeoutMinutes());
     }
 }

@@ -30,6 +30,14 @@
       <f:entry title="Pre-Release" field="preRelease" description="Mark this as a pre-release version for development environments.">
         <f:checkbox default="false" />
       </f:entry>
+
+      <f:entry title="Wait for completion" field="waitForCompletion" description="Block the build until the scan reaches a terminal state, then set the build result accordingly.">
+        <f:checkbox default="true" />
+      </f:entry>
+
+      <f:entry title="Poll timeout (minutes)" field="pollTimeoutMinutes" description="Maximum time to wait for completion before failing the build with the scan ID and a link.">
+        <f:number default="30" clazz="positive-number" />
+      </f:entry>
     </div>
 </j:jelly>
 

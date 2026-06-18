@@ -5,7 +5,7 @@
 
 ## Introduction
 
-The Finite State Analysis Jenkins Plugin provides multiple post-build actions for integrating with the Finite State platform using the Finite State CLT (Command Line Tool).
+The Finite State Analysis Jenkins Plugin provides multiple post-build actions for integrating with the Finite State platform by calling the Finite State public API (v0) directly over HTTPS. (Earlier versions shelled out to the Finite State CLT jar, which is now deprecated; the plugin no longer downloads or runs it, and Java is no longer required on the build agent.)
 
 This plugin gives you the ability to add Post Build actions and Pipeline steps for:
 
@@ -15,12 +15,13 @@ This plugin gives you the ability to add Post Build actions and Pipeline steps f
 
 ## Features
 
-- **Finite State Analyze Binary**: Upload and analyze binary files
-- **Finite State Import SBOM**: Import SBOM files for analysis  
+- **Finite State Analyze Binary**: Upload and analyze binary files (firmware images included — large files use the API's multipart upload automatically)
+- **Finite State Import SBOM**: Import CycloneDX or SPDX SBOM files (format auto-detected)
 - **Finite State Import 3rd Party Scan**: Import third-party scan results
-- Downloads and manages the Finite State CLT automatically
+- Talks to the Finite State public API directly — no CLT download, no Java required on the agent
 - Secure credential management for API tokens
-- Logs upload URLs for easy access to results
+- Optionally waits for the scan to complete and sets the build result accordingly
+- Logs the resolved project/version/scan IDs and a direct link to the results in the Finite State UI
 
 ## Getting started
 
@@ -49,6 +50,8 @@ Uploads binary files to Finite State for comprehensive analysis.
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Project Version | Version of the project (recommended for tracking) | `false` | `string` | |
 | Scan Types | Enable one or more: Binary SCA, Binary SAST, Configuration Analysis, Reachability Analysis. If none are selected, SCA is used by default. | `false` | `checkboxes` | `SCA and Reachability enabled; SAST/Config disabled` |
+| Wait for completion | Block the build until the scan reaches a terminal state, then set the build result accordingly | `false` | `boolean` | `true` |
+| Poll timeout (minutes) | Maximum minutes to wait for completion before failing with the scan ID and a link | `false` | `integer` | `30` |
 
 ### 2. Finite State Import SBOM
 
@@ -58,9 +61,11 @@ Imports SBOM (Software Bill of Materials) files to Finite State for analysis.
 |-----------|-------------|----------|------|---------|
 | Subdomain | Your Finite State instance subdomain | `true` | `string` | |
 | API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
-| SBOM File Path | Path to the SBOM file to import | `true` | `string` | |
+| SBOM File Path | Path to the SBOM file to import (CycloneDX or SPDX; format auto-detected) | `true` | `string` | |
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Project Version | Version of the project | `false` | `string` | |
+| Wait for completion | Block the build until the scan reaches a terminal state, then set the build result accordingly | `false` | `boolean` | `true` |
+| Poll timeout (minutes) | Maximum minutes to wait for completion before failing with the scan ID and a link | `false` | `integer` | `30` |
 
 ### 3. Finite State Import 3rd Party Scan
 
@@ -74,6 +79,8 @@ Imports third-party scan results to Finite State for analysis.
 | Project Name | Name of the project in Finite State | `true` | `string` | |
 | Scan Type | Type of third-party scanner (e.g., GitLab SAST, SonarQube, Snyk, etc.) | `true` | `dropdown` | |
 | Project Version | Version of the project | `false` | `string` | |
+| Wait for completion | Block the build until the scan reaches a terminal state, then set the build result accordingly | `false` | `boolean` | `true` |
+| Poll timeout (minutes) | Maximum minutes to wait for completion before failing with the scan ID and a link | `false` | `integer` | `30` |
 
 ## Usage
 
@@ -82,10 +89,15 @@ Imports third-party scan results to Finite State for analysis.
 3. Run the build
 
 The plugin will:
-1. Download the CLT if it doesn't exist
-2. Execute the appropriate action (upload, import SBOM, or import scan)
-3. Log the results in the build output
-4. Mark the build as successful if the operation completes
+1. Resolve (or create) the project and version in Finite State by name — honoring the Pre-Release flag on version creation
+2. Upload the artifact directly to Finite State storage and trigger processing (binary analysis, SBOM import, or third-party import)
+3. Optionally poll the scan until it reaches a terminal state (when "Wait for completion" is enabled)
+4. Log the resolved project ID, version ID, scan ID(s), and a link to the results in the Finite State UI
+5. Mark the build successful when the scan completes (or is accepted, when not waiting), and failed on a scan error or timeout
+
+### How it talks to Finite State
+
+All calls go to your instance's public API at `https://<subdomain>/api/public/v0`, authenticated with the `X-Authorization` header using the API token from the selected credential. The flow per run is: resolve project → resolve/create version → create the scan and upload the file (single PUT, or multipart for large binaries) → trigger processing → poll status (optional). No CLT jar is downloaded and nothing is executed as a subprocess; the upload runs on the build agent so artifact bytes never transit the Jenkins controller.
 
 ## Jenkins Pipeline usage
 
@@ -118,7 +130,9 @@ pipeline {
           configEnabled: false,
           reachabilityEnabled: true,
           externalizableId: false,
-          preRelease: false
+          preRelease: false,
+          waitForCompletion: true,
+          pollTimeoutMinutes: 30
         )
       }
     }
@@ -177,7 +191,9 @@ Notes:
 
 - Use `apiTokenCredentialsId` (the ID of a Secret Text credential containing your Finite State API token).
 
-- If you set `externalizableId: true`, the step will use the Jenkins Run Externalizable ID as the project version.
+- If you set `externalizableId: true`, the step will use the Jenkins Run Externalizable ID as the project version. If `externalizableId` is `false`, `projectVersion` is required (the build fails with a clear message if both are empty).
+
+- `waitForCompletion` (default `true`) makes the step block until the scan reaches a terminal state and sets the build result accordingly; set it to `false` to return as soon as the upload is accepted. `pollTimeoutMinutes` (default `30`) bounds the wait. These optional fields apply to all three steps.
 
 - For the `scanType` field in the `finiteStateImportThirdParty` step, you must select one of the supported scan types from the list in section Third-Party scanType values (exact identifiers) below. The value you provide should match exactly one of the identifiers in the "Third-Party scanType values" table. This ensures your scan is properly recognized and processed by the Finite State platform.
 
@@ -185,10 +201,16 @@ Notes:
 ## Scan Types for Binary Analysis
 
 - These options are presented in the UI as four checkboxes: `Binary SCA`, `Binary SAST`, `Configuration Analysis`, and `Reachability Analysis`.
-- At runtime, the plugin builds the CLI flag `--upload` by concatenating the enabled scan types as a comma-separated list (e.g., `--upload=sca,vulnerability_analysis`).
-- If none are selected, SCA is enforced by default.
+- At runtime the plugin maps the checkboxes onto the API's binary scan configuration:
 
-- **SCA**: Binary Software Composition Analysis (enabled by default)
+  | Checkbox | API `BinaryScanConfig` field |
+  |----------|------------------------------|
+  | Binary SCA | (always-on — see limitation below) |
+  | Configuration Analysis | `configurationAnalysis` |
+  | Reachability Analysis (requires SCA) | `vulnerabilityAnalysis` |
+  | Binary SAST | `binarySast` |
+
+- **SCA**: Binary Software Composition Analysis. **Limitation:** the API always runs the binary SCA pass, so unchecking this box does not disable it; the checkbox is retained for configuration parity with earlier versions.
 - **SAST**: Binary Static Application Security Testing
 - **Configuration Analysis**: Configuration and security analysis
 - **Reachability Analysis**: Performs reachability analysis on identified vulnerabilities (enabled by default, requires Binary SCA)
@@ -399,13 +421,13 @@ Use these values for the `scanType` field in Pipelines (e.g., `scanType: 'sonarq
 ## Requirements
 
 - Jenkins 2.479.3 or later
-- Java 8 or later (for running the CLT)
-- Internet access to download the CLT from your Finite State instance
+- Network access from the Jenkins controller and agents to your Finite State instance (`https://<subdomain>`)
+- A Finite State API token with permission to read/create projects and versions, create scans, and read scan status
 
 ## Security
 
-- API tokens are stored securely using Jenkins credentials
-- The CLT is downloaded over HTTPS with authentication
+- API tokens are stored securely using Jenkins credentials and read only at execution time — never written to job config, build XML, or the console
+- All API calls use HTTPS with the `X-Authorization` header; artifact uploads use short-lived presigned URLs
 - No sensitive data is logged in the build output
 
 ## Issues

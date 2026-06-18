@@ -10,7 +10,11 @@ import java.io.IOException;
 
 /**
  * Execution framework for Finite State analysis operations.
- * Provides common logic for executing different types of analysis.
+ *
+ * <p>Drives the shared flow against the Finite State public v0 API: validate configuration, resolve
+ * the API token, compute the target version, locate the workspace file, then run the per-analysis
+ * scan flow on the build agent ({@link FiniteStateScanCallable}) and translate the {@link ScanResult}
+ * into a Jenkins build outcome. Replaces the previous CLT-jar download-and-exec path.
  */
 public class FiniteStateExecutionFramework {
 
@@ -23,12 +27,12 @@ public class FiniteStateExecutionFramework {
      *
      * @param recorder Recorder that encapsulates analysis configuration and helpers
      * @param run Jenkins run/build context used for environment and logging
-     * @param workspace Workspace directory where files and the CLT are accessed
-     * @param launcher Jenkins launcher used to execute external processes
+     * @param workspace Workspace directory where files are accessed
+     * @param launcher Jenkins launcher (unused since the v0 migration; retained for call-site compatibility)
      * @param listener Build/task listener for console logging
-     * @return true when the analysis is triggered successfully (exit code 0 or 1), false on failures
+     * @return true when the scan completed successfully (or was accepted, when not waiting); false on failure
      * @throws InterruptedException if execution is interrupted
-     * @throws IOException if CLT download or file I/O fails
+     * @throws IOException if file I/O fails
      */
     public static boolean executeAnalysis(
             BaseFiniteStateRecorder recorder,
@@ -38,92 +42,68 @@ public class FiniteStateExecutionFramework {
             TaskListener listener)
             throws InterruptedException, IOException {
 
-        listener.getLogger().println("Starting Finite State " + recorder.getAnalysisType() + "...");
+        String analysisType = recorder.getAnalysisType();
+        listener.getLogger().println("Starting Finite State " + analysisType + "...");
 
         // Validate common fields
         if (!recorder.validateCommonFields(listener)) {
             return false;
         }
 
-        String parsedApiToken = recorder.getSecretTextValue(run, recorder.getApiTokenCredentialsId());
-        if (parsedApiToken == null) {
+        String apiToken = recorder.getSecretTextValue(run, recorder.getApiTokenCredentialsId());
+        if (apiToken == null) {
             String errorMessage = "ERROR: Could not retrieve API token from credentials";
             listener.getLogger().println(errorMessage);
-
-            // Add error to consolidated results
-            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\nCredential ID: "
-                    + recorder.getApiTokenCredentialsId();
             recorder.addConsolidatedResult(
-                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
-
+                    run,
+                    analysisType,
+                    recorder.getProjectName(),
+                    errorMessage + "\nProject: " + recorder.getProjectName() + "\nCredential ID: "
+                            + recorder.getApiTokenCredentialsId(),
+                    "ERROR",
+                    "N/A");
             return false;
         }
 
-        // Parse version
-        String parsedVersion = recorder.parseVersion(run, recorder.getProjectVersion());
+        // Compute the target version (FR-3): externalizable run ID, else projectVersion; fail if both empty.
+        String version = recorder.parseVersion(run, recorder.getProjectVersion());
+        if (version == null || version.isBlank()) {
+            String errorMessage =
+                    "ERROR: Project version is required. Enable 'Use externalized ID as version' or set Project Version.";
+            listener.getLogger().println(errorMessage);
+            recorder.addConsolidatedResult(run, analysisType, recorder.getProjectName(), errorMessage, "ERROR", "N/A");
+            return false;
+        }
 
-        // Log common information
         recorder.logCommonInfo(run, listener, recorder.getFilePathValue());
 
-        // Get CLT path
-        FilePath cltPath;
-        try {
-            cltPath = recorder.getCLTPath(workspace, recorder.getSubdomain(), parsedApiToken, listener);
-        } catch (IOException e) {
-            String errorMessage = "ERROR: Failed to download CLT: " + e.getMessage();
-            listener.getLogger().println(errorMessage);
-
-            // Add error to consolidated results
-            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\nSubdomain: "
-                    + recorder.getSubdomain() + "\nCredential ID: "
-                    + recorder.getApiTokenCredentialsId();
-            recorder.addConsolidatedResult(
-                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
-
-            return false;
-        }
-
-        // Verify file exists
+        // Verify the file exists (FR-9 file-not-found message format preserved from v1).
         FilePath fileObj = recorder.getFileFromWorkspace(workspace, recorder.getFilePathValue(), listener);
         if (fileObj == null || !fileObj.exists()) {
             String errorMessage =
                     "ERROR: " + recorder.getFilePathFieldName() + " not found: " + recorder.getFilePathValue();
             listener.getLogger().println(errorMessage);
-
-            // Add error to consolidated results
-            String consoleOutput = errorMessage + "\nProject: " + recorder.getProjectName() + "\n"
-                    + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue();
             recorder.addConsolidatedResult(
-                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
-
+                    run,
+                    analysisType,
+                    recorder.getProjectName(),
+                    errorMessage + "\nProject: " + recorder.getProjectName() + "\n" + recorder.getFilePathFieldName()
+                            + ": " + recorder.getFilePathValue(),
+                    "ERROR",
+                    "N/A");
             return false;
         }
 
-        // Execute the analysis
-        listener.getLogger().println("Executing Finite State " + recorder.getAnalysisType() + "...");
-        int exitCode = recorder.executeAnalysis(
-                cltPath,
-                fileObj,
-                recorder.getProjectName(),
-                parsedVersion,
-                parsedApiToken,
-                workspace,
-                launcher,
-                listener);
+        // Build the request and run the scan flow on the agent that holds the file.
+        FiniteStateScanRequest request = buildRequest(recorder, run, version);
+        listener.getLogger().println("Executing Finite State " + analysisType + " via the Finite State API...");
+        ScanResult result = fileObj.act(new FiniteStateScanCallable(request, listener));
 
-        return handleExitCode(recorder, run, listener, exitCode, parsedVersion);
+        return handleResult(recorder, run, listener, result);
     }
 
     /**
      * Backward-compatible shim for freestyle builds using {@link AbstractBuild} API.
-     *
-     * @param recorder Recorder that encapsulates analysis configuration and helpers
-     * @param build Freestyle build context
-     * @param launcher Jenkins launcher used to execute external processes
-     * @param listener Build listener for console logging
-     * @return result of delegated execution
-     * @throws InterruptedException if execution is interrupted
-     * @throws IOException if CLT download or file I/O fails
      */
     public static boolean executeAnalysis(
             BaseFiniteStateRecorder recorder, AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener)
@@ -132,102 +112,58 @@ public class FiniteStateExecutionFramework {
         return executeAnalysis(recorder, (Run<?, ?>) build, workspace, launcher, (TaskListener) listener);
     }
 
+    private static FiniteStateScanRequest buildRequest(
+            BaseFiniteStateRecorder recorder, Run<?, ?> run, String version) {
+        FiniteStateScanRequest request = new FiniteStateScanRequest();
+        request.setSubdomain(recorder.getSubdomain());
+        request.setApiToken(recorder.getSecretTextValue(run, recorder.getApiTokenCredentialsId()));
+        request.setProjectName(recorder.getProjectName());
+        request.setVersion(version);
+        request.setPreRelease(recorder.getPreRelease());
+        request.setWaitForCompletion(recorder.getWaitForCompletion());
+        request.setPollTimeoutMinutes(recorder.getPollTimeoutMinutes());
+        request.setAnalysisType(recorder.getAnalysisType());
+        request.setRelativeFilePath(recorder.getFilePathValue());
+        recorder.configureRequest(request);
+        return request;
+    }
+
     /**
-     * Handle the exit code from the analysis execution.
+     * Translate the scan result into a build outcome.
      *
-     * <p>Exit code 0 is treated as success, 1 as a successful run with warnings (vulnerabilities
-     * found), and any other code as error.</p>
-     *
-     * @param recorder Recorder for results aggregation and metadata
-     * @param run Current run used to attach consolidated result
-     * @param listener Listener for console output
-     * @param exitCode Exit code produced by the CLT execution
-     * @param parsedVersion Computed project version string
-     * @return true for success/warning exit codes (0 or 1), false for error
+     * <p>success → SUCCESS; completed/queued failures (ERROR/timeout) → FAILURE. Build gating is
+     * based on terminal scan status only — reading findings back is out of scope for this release.
      */
-    private static boolean handleExitCode(
-            BaseFiniteStateRecorder recorder,
-            Run<?, ?> run,
-            TaskListener listener,
-            int exitCode,
-            String parsedVersion) {
+    private static boolean handleResult(
+            BaseFiniteStateRecorder recorder, Run<?, ?> run, TaskListener listener, ScanResult result) {
 
-        String scanUrl = "https://" + recorder.getSubdomain();
+        String analysisType = recorder.getAnalysisType();
+        String scanUrl = result.getUiUrl() != null ? result.getUiUrl() : "https://" + recorder.getSubdomain();
 
-        if (exitCode == 0) {
-            // Success case
-            String consoleOutput = buildSuccessMessage(recorder, parsedVersion, exitCode);
+        if (result.isSuccess()) {
             recorder.addConsolidatedResult(
-                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "SUCCESS", scanUrl);
-
-            listener.getLogger().println("✅ Finite State " + recorder.getAnalysisType() + " started successfully!");
+                    run,
+                    analysisType,
+                    recorder.getProjectName(),
+                    result.getConsoleSummary(),
+                    "SUCCESS",
+                    scanUrl,
+                    result.getScanIdsDisplay(),
+                    result.getFinalStatus());
+            listener.getLogger().println("✅ Finite State " + analysisType + " completed: " + result.getFinalStatus());
             return true;
-
-        } else if (exitCode == 1) {
-            // Warning case - vulnerabilities found but scan completed
-            String consoleOutput = buildWarningMessage(recorder, parsedVersion, exitCode);
-            recorder.addConsolidatedResult(
-                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "WARNING", scanUrl);
-
-            listener.getLogger()
-                    .println(
-                            "⚠️ Finite State " + recorder.getAnalysisType() + " completed with vulnerabilities found.");
-            return true;
-
-        } else {
-            // Error case
-            String consoleOutput = buildErrorMessage(recorder, parsedVersion, exitCode);
-            recorder.addConsolidatedResult(
-                    run, recorder.getAnalysisType(), recorder.getProjectName(), consoleOutput, "ERROR", "N/A");
-
-            listener.getLogger()
-                    .println("❌ Finite State " + recorder.getAnalysisType() + " failed with exit code: " + exitCode);
-            return false;
         }
-    }
 
-    /**
-     * Build success message for consolidated results.
-     *
-     * @param recorder Recorder providing context such as analysis type and file path field name
-     * @param parsedVersion Computed project version string
-     * @param exitCode Exit code from the CLT execution
-     * @return Formatted message string
-     */
-    private static String buildSuccessMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
-        return "Finite State " + recorder.getAnalysisType() + " started successfully!\n"
-                + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue() + "\n"
-                + "Project Version: " + parsedVersion + "\n"
-                + "Exit Code: " + exitCode;
-    }
-
-    /**
-     * Build warning message for consolidated results.
-     *
-     * @param recorder Recorder providing context such as analysis type and file path field name
-     * @param parsedVersion Computed project version string
-     * @param exitCode Exit code from the CLT execution
-     * @return Formatted message string
-     */
-    private static String buildWarningMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
-        return "Finite State " + recorder.getAnalysisType() + " completed with vulnerabilities found.\n"
-                + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue() + "\n"
-                + "Project Version: " + parsedVersion + "\n"
-                + "Exit Code: " + exitCode;
-    }
-
-    /**
-     * Build error message for consolidated results.
-     *
-     * @param recorder Recorder providing context such as analysis type and file path field name
-     * @param parsedVersion Computed project version string
-     * @param exitCode Exit code from the CLT execution
-     * @return Formatted message string
-     */
-    private static String buildErrorMessage(BaseFiniteStateRecorder recorder, String parsedVersion, int exitCode) {
-        return "Finite State " + recorder.getAnalysisType() + " failed with exit code: " + exitCode + "\n"
-                + recorder.getFilePathFieldName() + ": " + recorder.getFilePathValue() + "\n"
-                + "Project Version: " + parsedVersion + "\n"
-                + "Exit Code: " + exitCode;
+        recorder.addConsolidatedResult(
+                run,
+                analysisType,
+                recorder.getProjectName(),
+                result.getConsoleSummary(),
+                "FAILURE",
+                scanUrl,
+                result.getScanIdsDisplay(),
+                result.getFinalStatus());
+        listener.getLogger().println("❌ Finite State " + analysisType + " failed: " + result.getFinalStatus());
+        return false;
     }
 }

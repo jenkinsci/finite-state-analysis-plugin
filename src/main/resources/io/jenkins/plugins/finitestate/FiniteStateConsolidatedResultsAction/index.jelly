@@ -9,6 +9,12 @@
                         <l:card title="${result.analysisType}">
                             <div class="jenkins-!-margin-bottom-2">
                                 <p><strong>Project:</strong> ${result.projectName}</p>
+                                <j:if test="${result.scanIds != null and result.scanIds != 'N/A'}">
+                                    <p><strong>Scan ID(s): </strong> ${result.scanIds}</p>
+                                </j:if>
+                                <j:if test="${result.scanStatus != null and result.scanStatus != 'N/A'}">
+                                    <p><strong>Scan status: </strong> ${result.scanStatus}</p>
+                                </j:if>
                                 <j:if test="${result.scanUrl != 'N/A'}">
                                     <p><strong>Access results: </strong>
                                         <a href="${result.scanUrl}" target="_blank">${result.scanUrl}</a>
