@@ -154,7 +154,9 @@ pipeline {
           projectName: 'My Project',
           projectVersion: '1.2.3',
           externalizableId: false,
-          preRelease: false
+          preRelease: false,
+          waitForCompletion: false,
+          pollTimeoutMinutes: 30
         )
       }
     }
@@ -178,7 +180,9 @@ pipeline {
           projectName: 'My Project',
           projectVersion: '1.2.3',
           externalizableId: false,
-          preRelease: false
+          preRelease: false,
+          waitForCompletion: false,
+          pollTimeoutMinutes: 30
         )
       }
     }
