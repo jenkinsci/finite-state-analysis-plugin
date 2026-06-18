@@ -98,7 +98,7 @@ final class FiniteStateApiClient {
         finishWithPolling(req, scanIds, result);
     }
 
-    /** SBOM import: resolve → create sbom scan → PUT → process (CycloneDX) / process-third-party (SPDX). */
+    /** SBOM import: resolve project/version → server-side single-shot upload (auto-detected CycloneDX/SPDX) → poll. */
     void runSbom(File file, FiniteStateScanRequest req, ScanResult result)
             throws FiniteStateApiException, InterruptedException, IOException {
         String projectId = resolveProjectId(req.getProjectName());
@@ -109,20 +109,19 @@ final class FiniteStateApiClient {
 
         String format = detectSbomFormat(file);
         log("Detected SBOM format: " + format);
-        ScanRef ref = createSbomScan(versionId, format, file.getName());
-        result.addScanId(ref.scanId);
-        putFile(ref.uploadUrl, file, "application/json");
-        if ("spdx".equals(format)) {
-            processThirdParty(ref.scanId, "spdx");
-        } else {
-            processScan(ref.scanId);
-        }
-        log("SBOM import queued (scan " + ref.scanId + ").");
+        // Server-side single-shot upload (the file goes to the API, which uploads to storage and
+        // triggers processing). Avoids a client->storage PUT that a WAF can block on scan content.
+        String query = "projectVersionId=" + enc(versionId)
+                + "&type=" + ("spdx".equals(format) ? "spdx" : "cdx")
+                + "&filename=" + enc(file.getName());
+        String scanId = ingestSingleShot("/scans/sbom", query, file, "Upload SBOM");
+        result.addScanId(scanId);
+        log("SBOM import submitted (scan " + scanId + ").");
 
-        finishWithPolling(req, List.of(ref.scanId), result);
+        finishWithPolling(req, List.of(scanId), result);
     }
 
-    /** Third-party scan import: resolve → create third-party scan → PUT → process-third-party. */
+    /** Third-party scan import: resolve project/version → server-side single-shot upload (scanner = scanType) → poll. */
     void runThirdParty(File file, FiniteStateScanRequest req, ScanResult result)
             throws FiniteStateApiException, InterruptedException, IOException {
         String projectId = resolveProjectId(req.getProjectName());
@@ -131,13 +130,16 @@ final class FiniteStateApiClient {
         result.setVersionId(versionId);
         result.setUiUrl(buildUiUrl(subdomain, projectId, versionId));
 
-        ScanRef ref = createThirdPartyScan(versionId, req.getScanType(), file.getName());
-        result.addScanId(ref.scanId);
-        putFile(ref.uploadUrl, file, "application/json");
-        processThirdParty(ref.scanId, req.getScanType());
-        log("Third-party scan queued (scan " + ref.scanId + ", scanner " + req.getScanType() + ").");
+        // Server-side single-shot upload (see runSbom) — the API uploads the file and triggers
+        // third-party processing in one call, so scanner output never transits a client->storage PUT.
+        String query = "projectVersionId=" + enc(versionId)
+                + "&type=" + enc(req.getScanType())
+                + "&filename=" + enc(file.getName());
+        String scanId = ingestSingleShot("/scans/third-party", query, file, "Upload third-party scan");
+        result.addScanId(scanId);
+        log("Third-party scan submitted (scan " + scanId + ", scanner " + req.getScanType() + ").");
 
-        finishWithPolling(req, List.of(ref.scanId), result);
+        finishWithPolling(req, List.of(scanId), result);
     }
 
     /**
@@ -308,57 +310,27 @@ final class FiniteStateApiClient {
     }
 
     // ========================================================================
-    // SBOM / third-party endpoints
+    // SBOM / third-party single-shot upload
     // ========================================================================
 
-    ScanRef createSbomScan(String versionId, String sbomFormat, String fileName)
+    /**
+     * POST the file bytes (octet-stream) to the API, which uploads to storage server-side and
+     * triggers processing in one call. Returns the created scan ID. Used for SBOM and third-party
+     * scans so scanner content never transits a client->storage PUT (which a WAF can block).
+     *
+     * <p>Limitation: the whole file travels in the request body, so this path is bounded by the
+     * API's request-body limit (a few MB). Larger SBOM/third-party files are not supported here.
+     */
+    private String ingestSingleShot(String path, String query, File file, String context)
             throws FiniteStateApiException, InterruptedException {
-        JSONObject body = new JSONObject();
-        body.element("projectVersionId", versionId);
-        body.element("sbomFormat", sbomFormat);
-        body.element("fileName", fileName);
         HttpResponse<String> resp = execWithRetry(
-                apiReq("/scans/sbom")
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                apiReq(path + "?" + query)
+                        .header("Content-Type", "application/octet-stream")
+                        .timeout(Duration.ofMinutes(10))
+                        .POST(fileBody(file))
                         .build(),
-                "Create SBOM scan");
-        return scanRef(asObject(parse(resp.body())), "Create SBOM scan");
-    }
-
-    void processScan(String scanId) throws FiniteStateApiException, InterruptedException {
-        execWithRetry(
-                apiReq("/scans/" + scanId + "/process")
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
-                        .build(),
-                "Process scan");
-    }
-
-    ScanRef createThirdPartyScan(String versionId, String scanType, String fileName)
-            throws FiniteStateApiException, InterruptedException {
-        JSONObject body = new JSONObject();
-        body.element("projectVersionId", versionId);
-        body.element("scanType", scanType);
-        body.element("fileName", fileName);
-        HttpResponse<String> resp = execWithRetry(
-                apiReq("/scans/third-party")
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                        .build(),
-                "Create third-party scan");
-        return scanRef(asObject(parse(resp.body())), "Create third-party scan");
-    }
-
-    void processThirdParty(String scanId, String scanner) throws FiniteStateApiException, InterruptedException {
-        JSONObject body = new JSONObject();
-        body.element("scanner", scanner);
-        execWithRetry(
-                apiReq("/scans/" + scanId + "/process-third-party")
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                        .build(),
-                "Process third-party scan");
+                context);
+        return requireText(asObject(parse(resp.body())), "scanId", context);
     }
 
     // ========================================================================
@@ -416,7 +388,7 @@ final class FiniteStateApiClient {
                 .timeout(Duration.ofHours(2))
                 .PUT(fileBody(file))
                 .build();
-        execWithRetry(req, "Upload file");
+        execUpload(req, "Upload binary");
     }
 
     private String putPart(String url, byte[] chunk) throws FiniteStateApiException, InterruptedException {
@@ -425,7 +397,7 @@ final class FiniteStateApiClient {
                 .timeout(Duration.ofHours(1))
                 .PUT(HttpRequest.BodyPublishers.ofByteArray(chunk))
                 .build();
-        HttpResponse<String> resp = execWithRetry(req, "Upload part");
+        HttpResponse<String> resp = execUpload(req, "Upload part");
         return resp.headers()
                 .firstValue("ETag")
                 .or(() -> resp.headers().firstValue("etag"))
@@ -452,7 +424,19 @@ final class FiniteStateApiClient {
                 .timeout(Duration.ofMinutes(2));
     }
 
+    /** API call (authenticated with the token) — errors may mention token permissions. */
     private HttpResponse<String> execWithRetry(HttpRequest req, String context)
+            throws FiniteStateApiException, InterruptedException {
+        return execWithRetry(req, context, true);
+    }
+
+    /** Presigned storage upload (no token) — errors must NOT blame token permissions. */
+    private HttpResponse<String> execUpload(HttpRequest req, String context)
+            throws FiniteStateApiException, InterruptedException {
+        return execWithRetry(req, context, false);
+    }
+
+    private HttpResponse<String> execWithRetry(HttpRequest req, String context, boolean apiCall)
             throws FiniteStateApiException, InterruptedException {
         IOException lastIo = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -466,7 +450,7 @@ final class FiniteStateApiClient {
                     backoff(attempt, context, "HTTP " + sc);
                     continue;
                 }
-                throw toApiException(sc, resp.body(), context);
+                throw toApiException(sc, resp.body(), context, apiCall);
             } catch (IOException e) {
                 lastIo = e;
                 if (attempt < MAX_ATTEMPTS) {
@@ -488,7 +472,14 @@ final class FiniteStateApiClient {
         Thread.sleep(delayMs);
     }
 
-    private FiniteStateApiException toApiException(int statusCode, String body, String context) {
+    private FiniteStateApiException toApiException(int statusCode, String body, String context, boolean apiCall) {
+        // An HTML body means an intermediary (proxy / CDN / WAF) answered, not the API — summarize it
+        // instead of dumping the page, and never attribute it to the API token.
+        String html = summarizeHtmlBlock(body);
+        if (html != null) {
+            return new FiniteStateApiException(statusCode, context + ": " + statusCode + " - " + html);
+        }
+
         List<String> messages = new ArrayList<>();
         try {
             JSON json = JSONSerializer.toJSON(body == null || body.isBlank() ? "{}" : body);
@@ -512,12 +503,55 @@ final class FiniteStateApiClient {
         } catch (RuntimeException ignored) {
             // Non-JSON body; fall back to the raw text below.
         }
-        String hint = hintFor(statusCode);
+        // The token-permission hint only makes sense for authenticated API calls, never for an
+        // unauthenticated presigned-storage upload (FR-9 accuracy).
+        String hint = apiCall ? hintFor(statusCode) : "";
         String suffix = !messages.isEmpty()
                 ? " - " + String.join(" | ", messages)
-                : (body != null && !body.isBlank() ? " - " + body : "");
+                : (body != null && !body.isBlank() ? " - " + truncate(body) : "");
         String hintSuffix = hint.isEmpty() ? "" : " - " + hint;
         return new FiniteStateApiException(statusCode, context + ": " + statusCode + suffix + hintSuffix);
+    }
+
+    /**
+     * If the body is an HTML error page (e.g. a Cloudflare/WAF block), return a one-line summary with
+     * the Cloudflare Ray ID when present; otherwise null.
+     */
+    private static String summarizeHtmlBlock(String body) {
+        if (body == null) {
+            return null;
+        }
+        String trimmed = body.stripLeading();
+        boolean looksHtml =
+                trimmed.regionMatches(true, 0, "<!doctype", 0, 9) || trimmed.regionMatches(true, 0, "<html", 0, 5);
+        if (!looksHtml) {
+            return null;
+        }
+        String ray = null;
+        int idx = body.indexOf("Cloudflare Ray ID:");
+        if (idx >= 0) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "Cloudflare Ray ID:\\s*</span>\\s*<strong[^>]*>([a-z0-9]+)")
+                    .matcher(body);
+            if (m.find()) {
+                ray = m.group(1);
+            }
+        }
+        boolean cloudflare = body.contains("Cloudflare") || body.contains("cf-error");
+        StringBuilder sb = new StringBuilder("request blocked by an upstream ");
+        sb.append(cloudflare ? "WAF/CDN (Cloudflare)" : "proxy");
+        sb.append(" before reaching Finite State storage");
+        if (ray != null) {
+            sb.append(" [Ray ID ").append(ray).append("]");
+        }
+        sb.append(". This is not an API-token problem — the scan file content likely tripped a WAF rule;"
+                + " contact your Finite State admin to allowlist scan uploads.");
+        return sb.toString();
+    }
+
+    private static String truncate(String s) {
+        String oneLine = s.replaceAll("\\s+", " ").trim();
+        return oneLine.length() > 300 ? oneLine.substring(0, 300) + "…" : oneLine;
     }
 
     private static String hintFor(int statusCode) {
@@ -673,13 +707,6 @@ final class FiniteStateApiClient {
         throw new FiniteStateApiException(0, context + ": response missing '" + field + "'");
     }
 
-    private static ScanRef scanRef(JSONObject n, String context) throws FiniteStateApiException {
-        ScanRef ref = new ScanRef();
-        ref.scanId = requireText(n, "scanId", context);
-        ref.uploadUrl = optString(n, "uploadUrl", null);
-        return ref;
-    }
-
     /** Null-safe string accessor that treats JSONNull and missing keys as the default. */
     private static String optString(JSONObject obj, String key, String def) {
         if (obj == null || !obj.has(key)) {
@@ -710,11 +737,6 @@ final class FiniteStateApiClient {
         String uploadUrl;
         long partSize;
         int partCount;
-    }
-
-    static final class ScanRef {
-        String scanId;
-        String uploadUrl;
     }
 
     static final class PollOutcome {

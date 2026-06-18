@@ -96,7 +96,11 @@ The plugin will:
 
 ### How it talks to Finite State
 
-All calls go to your instance's public API at `https://<subdomain>/api/public/v0`, authenticated with the `X-Authorization` header using the API token from the selected credential. The flow per run is: resolve project → resolve/create version → create the scan and upload the file (single PUT, or multipart for large binaries) → trigger processing → poll status (optional). No CLT jar is downloaded and nothing is executed as a subprocess; the upload runs on the build agent so artifact bytes never transit the Jenkins controller.
+All calls go to your instance's public API at `https://<subdomain>/api/public/v0`, authenticated with the `X-Authorization` header using the API token from the selected credential. The flow per run is: resolve project → resolve/create version → upload + trigger the scan → poll status (optional). No CLT jar is downloaded and nothing is executed as a subprocess; the upload runs on the build agent so artifact bytes never transit the Jenkins controller.
+
+Upload mechanics differ by type:
+- **Binary** uploads directly to storage (single PUT, or multipart for large firmware), then starts the scan.
+- **SBOM and third-party** scans use the API's single-shot upload: the file is sent to the API, which stores it server-side and triggers processing in one call. This keeps scanner output (which often contains attack-signature strings) off a direct client→storage request that a WAF could block. *Limitation:* single-shot uploads are bounded by the API's request-body limit (a few MB), which is ample for typical SBOM/scanner files.
 
 ## Jenkins Pipeline usage
 
