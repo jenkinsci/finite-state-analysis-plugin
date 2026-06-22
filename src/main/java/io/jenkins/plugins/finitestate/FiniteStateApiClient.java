@@ -164,7 +164,7 @@ final class FiniteStateApiClient {
     // ========================================================================
 
     String resolveProjectId(String projectName) throws FiniteStateApiException, InterruptedException {
-        HttpResponse<String> resp = execWithRetry(
+        HttpResponse<String> resp = execGet(
                 apiReq("/projects?filter=" + enc("name==\"" + escapeRsql(projectName) + "\""))
                         .GET()
                         .build(),
@@ -177,7 +177,7 @@ final class FiniteStateApiClient {
         body.element("name", projectName);
         body.element("description", projectName);
         body.element("type", "application");
-        HttpResponse<String> created = execWithRetry(
+        HttpResponse<String> created = execPost(
                 apiReq("/projects")
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
@@ -188,26 +188,61 @@ final class FiniteStateApiClient {
 
     String resolveOrCreateVersionId(String projectId, String versionName, boolean preRelease)
             throws FiniteStateApiException, InterruptedException {
-        HttpResponse<String> resp = execWithRetry(
-                apiReq("/projects/" + projectId + "/versions?filter="
-                                + enc("name==\"" + escapeRsql(versionName) + "\""))
-                        .GET()
-                        .build(),
-                "Versions list");
-        JSONObject existing = findByName(parse(resp.body()), versionName);
-        if (existing != null) {
-            return requireText(existing, "id", "Versions list");
+        String existingId = findVersionIdByName(projectId, versionName);
+        if (existingId != null) {
+            return existingId;
         }
         JSONObject body = new JSONObject();
         body.element("version", versionName);
         body.element("releaseType", preRelease ? "PRE-RELEASE" : "RELEASE");
-        HttpResponse<String> created = execWithRetry(
-                apiReq("/projects/" + projectId + "/versions")
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                        .build(),
-                "Version create");
-        return requireText(asObject(parse(created.body())), "id", "Version create");
+        try {
+            HttpResponse<String> created = execPost(
+                    apiReq("/projects/" + projectId + "/versions")
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                            .build(),
+                    "Version create");
+            return requireText(asObject(parse(created.body())), "id", "Version create");
+        } catch (FiniteStateApiException e) {
+            // create_version returns 409 when the name already exists in the branch. The versions
+            // list endpoint ignores ?filter, so a pre-existing version beyond our scan window lands
+            // here — re-resolve it by name rather than failing the build.
+            if (e.getStatusCode() == 409) {
+                String found = findVersionIdByName(projectId, versionName);
+                if (found != null) {
+                    return found;
+                }
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Resolve a version ID by name. The versions list endpoint silently ignores the RSQL `filter`
+     * param (confirmed against the API: the handler reads only offset/limit), so we page through the
+     * (newest-first) list and match client-side, bounded by a safety cap.
+     */
+    private String findVersionIdByName(String projectId, String versionName)
+            throws FiniteStateApiException, InterruptedException {
+        final int pageSize = 200;
+        final int maxScan = 10_000; // bound the scan; rare projects with more versions fall through to 409-recheck
+        for (int offset = 0; offset < maxScan; offset += pageSize) {
+            HttpResponse<String> resp = execGet(
+                    apiReq("/projects/" + projectId + "/versions?offset=" + offset + "&limit=" + pageSize)
+                            .GET()
+                            .build(),
+                    "Versions list");
+            JSON parsed = parse(resp.body());
+            JSONObject match = findByName(parsed, versionName);
+            if (match != null) {
+                return requireText(match, "id", "Versions list");
+            }
+            int size = parsed instanceof JSONArray ? ((JSONArray) parsed).size() : 0;
+            if (size < pageSize) {
+                break; // last page
+            }
+        }
+        return null;
     }
 
     // ========================================================================
@@ -228,7 +263,7 @@ final class FiniteStateApiClient {
         if (sha256 != null) {
             body.element("sha256", sha256);
         }
-        HttpResponse<String> resp = execWithRetry(
+        HttpResponse<String> resp = execPost(
                 apiReq("/scans/binary")
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
@@ -268,7 +303,7 @@ final class FiniteStateApiClient {
 
     String getMultipartPartUrl(String scanContextId, int partNumber)
             throws FiniteStateApiException, InterruptedException {
-        HttpResponse<String> resp = execWithRetry(
+        HttpResponse<String> resp = execGet(
                 apiReq("/scans/" + scanContextId + "/multipart/" + partNumber + "/url")
                         .GET()
                         .build(),
@@ -280,7 +315,7 @@ final class FiniteStateApiClient {
             throws FiniteStateApiException, InterruptedException {
         JSONObject body = new JSONObject();
         body.element("parts", parts);
-        execWithRetry(
+        execPost(
                 apiReq("/scans/" + scanContextId + "/complete")
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
@@ -289,7 +324,7 @@ final class FiniteStateApiClient {
     }
 
     List<String> startBinaryScan(String scanContextId) throws FiniteStateApiException, InterruptedException {
-        HttpResponse<String> resp = execWithRetry(
+        HttpResponse<String> resp = execPost(
                 apiReq("/scans/" + scanContextId + "/start")
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.noBody())
@@ -323,7 +358,7 @@ final class FiniteStateApiClient {
      */
     private String ingestSingleShot(String path, String query, File file, String context)
             throws FiniteStateApiException, InterruptedException {
-        HttpResponse<String> resp = execWithRetry(
+        HttpResponse<String> resp = execPost(
                 apiReq(path + "?" + query)
                         .header("Content-Type", "application/octet-stream")
                         .timeout(Duration.ofMinutes(10))
@@ -369,7 +404,7 @@ final class FiniteStateApiClient {
 
     JSONObject getScanStatus(String scanId) throws FiniteStateApiException, InterruptedException {
         HttpResponse<String> resp =
-                execWithRetry(apiReq("/scans/" + scanId + "/status").GET().build(), "Get scan status");
+                execGet(apiReq("/scans/" + scanId + "/status").GET().build(), "Get scan status");
         return asObject(parse(resp.body()));
     }
 
@@ -424,19 +459,29 @@ final class FiniteStateApiClient {
                 .timeout(Duration.ofMinutes(2));
     }
 
-    /** API call (authenticated with the token) — errors may mention token permissions. */
-    private HttpResponse<String> execWithRetry(HttpRequest req, String context)
+    /** GET (idempotent, authenticated) — safe to retry on any transient failure. */
+    private HttpResponse<String> execGet(HttpRequest req, String context)
             throws FiniteStateApiException, InterruptedException {
-        return execWithRetry(req, context, true);
+        return execWithRetry(req, context, true, true);
     }
 
-    /** Presigned storage upload (no token) — errors must NOT blame token permissions. */
+    /**
+     * POST (authenticated, NOT idempotent) — retried only on failures where the request provably did
+     * not reach the server (HTTP 429, or a connect-phase network error), to avoid duplicate
+     * creates/triggers if a response is lost after the server already committed.
+     */
+    private HttpResponse<String> execPost(HttpRequest req, String context)
+            throws FiniteStateApiException, InterruptedException {
+        return execWithRetry(req, context, true, false);
+    }
+
+    /** Presigned storage upload (no token, idempotent PUT) — errors must NOT blame the token. */
     private HttpResponse<String> execUpload(HttpRequest req, String context)
             throws FiniteStateApiException, InterruptedException {
-        return execWithRetry(req, context, false);
+        return execWithRetry(req, context, false, true);
     }
 
-    private HttpResponse<String> execWithRetry(HttpRequest req, String context, boolean apiCall)
+    private HttpResponse<String> execWithRetry(HttpRequest req, String context, boolean apiCall, boolean idempotent)
             throws FiniteStateApiException, InterruptedException {
         IOException lastIo = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -446,13 +491,31 @@ final class FiniteStateApiClient {
                 if (sc >= 200 && sc < 300) {
                     return resp;
                 }
-                if (sc >= 500 && attempt < MAX_ATTEMPTS) {
+                // 429 = rejected before processing (backpressure) → always safe to retry, honoring
+                // Retry-After when present (NFR-2). Applies to non-idempotent POSTs too.
+                if (sc == 429 && attempt < MAX_ATTEMPTS) {
+                    backoff429(resp, attempt, context);
+                    continue;
+                }
+                // A 5xx may have committed server-side → retry only when the call is idempotent.
+                if (sc >= 500 && idempotent && attempt < MAX_ATTEMPTS) {
                     backoff(attempt, context, "HTTP " + sc);
                     continue;
                 }
                 throw toApiException(sc, resp.body(), context, apiCall);
             } catch (IOException e) {
                 lastIo = e;
+                // For a non-idempotent call, only a connect-phase error proves the request never
+                // landed; any other IOException (e.g. a read timeout) might have committed, so do NOT
+                // retry — fail loudly rather than risk a duplicate create/trigger.
+                if (!idempotent && !isConnectPhase(e)) {
+                    throw new FiniteStateApiException(
+                            0,
+                            context + ": network error after the request was sent (" + e
+                                    + "); not retried to avoid a duplicate submission. Check the Finite State"
+                                    + " UI for whether it was created.",
+                            e);
+                }
                 if (attempt < MAX_ATTEMPTS) {
                     backoff(attempt, context, e.toString());
                 }
@@ -468,10 +531,31 @@ final class FiniteStateApiClient {
                 lastIo);
     }
 
+    /** A connect-phase failure proves the request was never delivered (safe to retry even for POST). */
+    private static boolean isConnectPhase(IOException e) {
+        return e instanceof java.net.ConnectException
+                || e instanceof java.net.UnknownHostException
+                || e instanceof java.net.http.HttpConnectTimeoutException;
+    }
+
     private void backoff(int attempt, String context, String reason) throws InterruptedException {
         long delayMs = (long) Math.pow(2, attempt) * 500L; // 1s, 2s
         log("WARNING: " + context + " transient failure (" + reason + "); retry " + attempt + "/" + (MAX_ATTEMPTS - 1)
                 + " in " + delayMs + "ms");
+        Thread.sleep(delayMs);
+    }
+
+    /** Backoff for HTTP 429, honoring an integer-seconds Retry-After header when present (capped at 60s). */
+    private void backoff429(HttpResponse<String> resp, int attempt, String context) throws InterruptedException {
+        long delayMs;
+        String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
+        if (retryAfter != null && retryAfter.matches("\\d+")) {
+            delayMs = Math.min(Long.parseLong(retryAfter) * 1000L, 60_000L);
+        } else {
+            delayMs = (long) Math.pow(2, attempt) * 500L;
+        }
+        log("WARNING: " + context + " rate-limited (429); retry " + attempt + "/" + (MAX_ATTEMPTS - 1) + " in "
+                + delayMs + "ms");
         Thread.sleep(delayMs);
     }
 
