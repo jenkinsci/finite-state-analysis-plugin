@@ -458,10 +458,13 @@ final class FiniteStateApiClient {
                 }
             }
         }
+        // getMessage() is null for ConnectException/UnknownHostException — use toString() (class +
+        // message) and name the host so a DNS/subdomain/VPN problem is diagnosable, not "- null".
+        String cause = lastIo != null ? lastIo.toString() : "unknown network error";
         throw new FiniteStateApiException(
                 0,
-                context + ": Finite State API is currently unavailable - "
-                        + (lastIo != null ? lastIo.getMessage() : "unknown network error"),
+                context + ": cannot reach the Finite State API at https://" + subdomain + " (" + cause
+                        + "). Verify the Subdomain is correct and reachable from this Jenkins node (DNS/VPN/proxy).",
                 lastIo);
     }
 
