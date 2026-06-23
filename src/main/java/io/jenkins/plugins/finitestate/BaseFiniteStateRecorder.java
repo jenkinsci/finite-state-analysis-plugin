@@ -16,8 +16,15 @@ import org.kohsuke.stapler.DataBoundSetter;
 /**
  * Abstract base class for all Finite State recorders.
  * Contains common functionality shared across different analysis types.
+ *
+ * <p>As of the v0 API migration the plugin no longer downloads or executes the CLT jar; each
+ * recorder describes its work via {@link #configureRequest(FiniteStateScanRequest)} and the shared
+ * {@link FiniteStateExecutionFramework} drives the REST flow.
  */
 public abstract class BaseFiniteStateRecorder extends Recorder implements SimpleBuildStep {
+
+    /** Default poll timeout (minutes) when waiting for scan completion (FR-7). */
+    public static final int DEFAULT_POLL_TIMEOUT_MINUTES = 30;
 
     protected String subdomain;
     // Explicit name indicating this is a Jenkins Credentials ID (Secret Text) holding the API token.
@@ -26,6 +33,8 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     protected String projectVersion;
     protected Boolean externalizableId;
     protected Boolean preRelease;
+    protected Boolean waitForCompletion;
+    protected Integer pollTimeoutMinutes;
 
     protected BaseFiniteStateRecorder() {
         // Default constructor for inheritance
@@ -54,6 +63,16 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
 
     public boolean getPreRelease() {
         return preRelease != null ? preRelease : false;
+    }
+
+    public boolean getWaitForCompletion() {
+        // Default false: submit the scan and return (the CLT-style flow) so the build doesn't block;
+        // the user follows progress in the Finite State UI. Enable to block on terminal status.
+        return waitForCompletion != null ? waitForCompletion : false;
+    }
+
+    public int getPollTimeoutMinutes() {
+        return pollTimeoutMinutes != null && pollTimeoutMinutes > 0 ? pollTimeoutMinutes : DEFAULT_POLL_TIMEOUT_MINUTES;
     }
 
     // Common setters
@@ -88,6 +107,16 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
         this.preRelease = preRelease;
     }
 
+    @DataBoundSetter
+    public void setWaitForCompletion(boolean waitForCompletion) {
+        this.waitForCompletion = waitForCompletion;
+    }
+
+    @DataBoundSetter
+    public void setPollTimeoutMinutes(int pollTimeoutMinutes) {
+        this.pollTimeoutMinutes = pollTimeoutMinutes;
+    }
+
     /**
      * Get file from workspace - common utility method (pipeline and freestyle)
      */
@@ -114,15 +143,6 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
             return stringCredentials.getSecret().getPlainText();
         }
         return null;
-    }
-
-    /**
-     * Get CLT path using the shared CLTManager
-     */
-    protected FilePath getCLTPath(FilePath workspace, String subdomain, String apiToken, TaskListener listener)
-            throws IOException, InterruptedException {
-        String cltUrl = "https://" + subdomain + "/api/config/clt";
-        return CLTManager.getOrDownloadCLT(cltUrl, apiToken, subdomain, workspace, listener);
     }
 
     /**
@@ -172,36 +192,34 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     }
 
     /**
-     * Add result to consolidated results action
+     * Add a successful/structured result (with scan metadata) to the consolidated results action.
+     */
+    protected void addConsolidatedResult(
+            Run<?, ?> run,
+            String analysisType,
+            String projectName,
+            String consoleOutput,
+            String status,
+            String url,
+            String scanIds,
+            String scanStatus) {
+        FiniteStateConsolidatedResultsAction.getOrCreate(run)
+                .addResult(analysisType, projectName, consoleOutput, status, url, scanIds, scanStatus);
+    }
+
+    /**
+     * Add a minimal result (error/validation paths that have no scan metadata yet).
      */
     protected void addConsolidatedResult(
             Run<?, ?> run, String analysisType, String projectName, String consoleOutput, String status, String url) {
-        FiniteStateConsolidatedResultsAction.getOrCreate(run)
-                .addResult(analysisType, projectName, consoleOutput, status, url);
+        addConsolidatedResult(run, analysisType, projectName, consoleOutput, status, url, "N/A", status);
     }
 
     /**
-     * Build the environment variables required by the CLT for authentication and domain routing.
+     * Populate the type-specific portion of the scan request (kind + per-analysis fields). The
+     * framework fills the common fields (subdomain, token, project, version, polling, etc.).
      */
-    protected String[] buildCLTEnvironment(String apiToken) {
-        return new String[] {
-            "FINITE_STATE_AUTH_TOKEN=" + apiToken, "FINITE_STATE_DOMAIN=" + subdomain,
-        };
-    }
-
-    /**
-     * Abstract method for executing the specific analysis
-     */
-    protected abstract int executeAnalysis(
-            FilePath cltPath,
-            FilePath filePath,
-            String projectName,
-            String projectVersion,
-            String apiToken,
-            FilePath workspace,
-            Launcher launcher,
-            TaskListener listener)
-            throws IOException, InterruptedException;
+    protected abstract void configureRequest(FiniteStateScanRequest request);
 
     /**
      * Get the analysis type name for logging and results

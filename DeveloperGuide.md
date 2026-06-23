@@ -84,6 +84,26 @@ Command to install `xcode-select` in Mac:
 xcode-select --install
 ```
 
+### Architecture (Finite State v0 API integration)
+
+As of the v0 API migration the plugin no longer downloads or executes the Finite State CLT jar. Each post-build action talks to the public API at `https://<subdomain>/api/public/v0` directly.
+
+Key classes (all in `io.jenkins.plugins.finitestate`):
+
+| Class | Responsibility |
+|---|---|
+| `BaseFiniteStateRecorder` | Common config fields (subdomain, credential, project, version, pre-release, `waitForCompletion`, `pollTimeoutMinutes`) and the `configureRequest(...)` hook each recorder implements. |
+| `FiniteState{AnalyzeBinary,SBOMImport,ThirdPartyImport}Recorder` | One per action. Implements `configureRequest` to set the analysis kind and type-specific fields; descriptors own the form UI and validation. |
+| `FiniteStateExecutionFramework` | Controller-side orchestration: validate, resolve the API token, compute the version (FR-3), locate the workspace file, run the agent-side callable, and map the result to a build outcome. |
+| `FiniteStateScanRequest` | Serializable parameter bundle shipped to the agent. |
+| `FiniteStateScanCallable` | A `MasterToSlaveFileCallable<ScanResult>` that runs the scan flow on the **agent** holding the file, so artifact bytes stream from the node straight to storage and never transit the controller. |
+| `FiniteStateApiClient` | The v0 REST client (`java.net.http.HttpClient` + bundled `net.sf.json`). Endpoint methods, the per-analysis `run*` orchestration, retry-with-backoff, FR-9 error mapping, and pure helpers (scan-config mapping, SBOM format detection, status classification, UI link). |
+| `ScanResult` | Serializable outcome returned to the controller; feeds the build result and the "Finite State Results" action. |
+
+Per-run flow: resolve project → resolve/create version (`releaseType` from the pre-release flag) → upload + trigger the scan → optionally poll `/scans/{id}/status` to a terminal state. Upload differs by type: **binary** uses the dedicated context flow (`POST /scans/binary` → direct single-PUT or S3 multipart → `POST /scans/{ctx}/start`); **SBOM and third-party** use the single-shot octet-stream endpoints (`POST /scans/sbom` / `POST /scans/third-party` with the file as the body), where the API uploads to storage server-side and triggers processing in one call — this keeps scanner content off a client→storage PUT that a WAF can block (the failure mode that motivated the choice), at the cost of the API request-body size limit.
+
+The endpoint contract is defined in the `finite-state-api` repo (`openapi.json`, `src/routes/v0/`). The Azure DevOps extension (`finite-state-ado-extension`) is a prior-generation reference client for the same API. JSON is handled with `net.sf.json` (bundled with Jenkins via Stapler) so no extra plugin dependency is needed.
+
 ### Publishing a new release to the Jenkins Update Center
 
 This plugin is published from the [jenkinsci/finite-state-analysis-plugin](https://github.com/jenkinsci/finite-state-analysis-plugin) fork, which is the official Jenkins community repository. The upstream development happens in [FiniteStateInc/finite-state-jenkins-plugin](https://github.com/FiniteStateInc/finite-state-jenkins-plugin).

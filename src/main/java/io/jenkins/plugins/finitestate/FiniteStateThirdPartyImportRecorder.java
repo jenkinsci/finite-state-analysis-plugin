@@ -1,14 +1,9 @@
 package io.jenkins.plugins.finitestate;
 
 import hudson.Extension;
-import hudson.FilePath;
-import hudson.Launcher;
-import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import javax.servlet.ServletException;
 import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -52,27 +47,9 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
     }
 
     @Override
-    protected int executeAnalysis(
-            FilePath cltPath,
-            FilePath filePath,
-            String projectName,
-            String projectVersion,
-            String apiToken,
-            FilePath workspace,
-            Launcher launcher,
-            TaskListener listener)
-            throws IOException, InterruptedException {
-        return executeThirdPartyImport(
-                cltPath,
-                filePath,
-                projectName,
-                projectVersion,
-                scanType,
-                getPreRelease(),
-                apiToken,
-                workspace,
-                launcher,
-                listener);
+    protected void configureRequest(FiniteStateScanRequest request) {
+        request.setKind(FiniteStateScanRequest.Kind.THIRD_PARTY);
+        request.setScanType(scanType);
     }
 
     @Override
@@ -90,47 +67,6 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
         return scanFilePath;
     }
 
-    /**
-     * Execute the third party import command
-     */
-    private int executeThirdPartyImport(
-            FilePath cltPath,
-            FilePath scanFile,
-            String projectName,
-            String projectVersion,
-            String scanType,
-            boolean preRelease,
-            String apiToken,
-            FilePath workspace,
-            Launcher launcher,
-            TaskListener listener)
-            throws IOException, InterruptedException {
-
-        List<String> command = new ArrayList<>();
-        command.add("java");
-        command.add("-jar");
-        command.add(cltPath.getRemote());
-        command.add("--thirdParty=" + scanType);
-        command.add("--name=" + projectName);
-        command.add("--version=" + projectVersion);
-        command.add(scanFile.getRemote());
-
-        if (preRelease) {
-            command.add("--pre-release");
-        }
-
-        listener.getLogger().println("Executing command: " + String.join(" ", command));
-
-        Launcher.ProcStarter starter = launcher.launch();
-        starter.cmds(command);
-        starter.envs(buildCLTEnvironment(apiToken));
-        starter.stdout(listener.getLogger());
-        starter.stderr(listener.getLogger());
-        starter.pwd(workspace);
-
-        return starter.join();
-    }
-
     @Symbol("finiteStateImportThirdParty")
     @Extension
     public static final class DescriptorImpl extends BaseFiniteStateDescriptor {
@@ -144,7 +80,18 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
         @RequirePOST
         // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckScanType(@QueryParameter String value) throws IOException, ServletException {
-            return checkRequiredValue(value);
+            if (value == null || value.isBlank()) {
+                return FormValidation.error("This field is required");
+            }
+            // FR-6: validate against the supported third-party scanner list (single source of truth
+            // below). The API also validates server-side at /process-third-party time.
+            for (ListBoxModel.Option option : doFillScanTypeItems()) {
+                if (!option.value.isBlank() && option.value.equals(value)) {
+                    return FormValidation.ok();
+                }
+            }
+            return FormValidation.error(
+                    "Unknown scan type '" + value + "'. Select a supported third-party scanner from the list.");
         }
 
         @RequirePOST
