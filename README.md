@@ -40,6 +40,7 @@ To use this plugin, follow the following steps:
    - `Finite State - Import 3rd Party Scan`
 4. **Generate an API Token**: You need to generate an API token from your Finite State instance. Navigate to your Finite State domain (e.g., if your domain is `fs-yolo.finitestate.io`, go to https://fs-yolo.finitestate.io/settings/api-tokens) and generate a new API token. This token will be used to authenticate with the Finite State platform.
 5. Complete the fields following the below reference. For sensitive fields like `API Token`, we use the credentials plugin, so be sure to create the text credential for this field and select the correct one on the dropdown.
+6. In the **Platform** dropdown, choose **Legacy Platform (Java CLT)** (the default) if your organization is still on the legacy platform, or **2026 Platform Release (REST API)** once your organization has been upgraded to the 2026 platform release. Leaving it at the default keeps existing jobs working unchanged after a plugin upgrade.
 
 ## Post-Build Actions
 
@@ -49,6 +50,7 @@ Uploads binary files to Finite State for comprehensive analysis.
 
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
+| Platform | Which Finite State platform to target: **Legacy Platform (Java CLT)** (default) or **2026 Platform Release (REST API)**. In Pipeline set `platform: 'legacy'` or `platform: '2026'`. | `false` | `dropdown` | `Legacy Platform (Java CLT)` |
 | Subdomain | Your Finite State instance subdomain (e.g., "fs-yolo.dev.fstate.ninja") | `true` | `string` | |
 | API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
 | Binary File Path | Path to the binary file to upload for analysis | `true` | `string` | |
@@ -64,6 +66,7 @@ Imports SBOM (Software Bill of Materials) files to Finite State for analysis.
 
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
+| Platform | Which Finite State platform to target: **Legacy Platform (Java CLT)** (default) or **2026 Platform Release (REST API)**. In Pipeline set `platform: 'legacy'` or `platform: '2026'`. | `false` | `dropdown` | `Legacy Platform (Java CLT)` |
 | Subdomain | Your Finite State instance subdomain | `true` | `string` | |
 | API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
 | SBOM File Path | Path to the SBOM file to import (CycloneDX or SPDX; format auto-detected) | `true` | `string` | |
@@ -78,6 +81,7 @@ Imports third-party scan results to Finite State for analysis.
 
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
+| Platform | Which Finite State platform to target: **Legacy Platform (Java CLT)** (default) or **2026 Platform Release (REST API)**. In Pipeline set `platform: 'legacy'` or `platform: '2026'`. | `false` | `dropdown` | `Legacy Platform (Java CLT)` |
 | Subdomain | Your Finite State instance subdomain | `true` | `string` | |
 | API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
 | Scan File Path | Path to the scan results file | `true` | `string` | |
@@ -130,6 +134,7 @@ pipeline {
     stage('Finite State Binary Analysis') {
       steps {
         finiteStateAnalyzeBinary(
+          platform: 'legacy', // 'legacy' = Legacy Platform (Java CLT, default); '2026' = 2026 Platform Release (REST API)
           subdomain: 'fs-your-subdomain.finitestate.io',
           apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
           binaryFilePath: 'build/firmware.bin',
@@ -159,6 +164,7 @@ pipeline {
     stage('Finite State Import SBOM') {
       steps {
         finiteStateImportSbom(
+          platform: 'legacy', // 'legacy' = Legacy Platform (Java CLT, default); '2026' = 2026 Platform Release (REST API)
           subdomain: 'fs-your-subdomain.finitestate.io',
           apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
           sbomFilePath: 'sbom/cyclonedx.json',
@@ -184,6 +190,7 @@ pipeline {
     stage('Finite State Import 3rd Party Scan') {
       steps {
         finiteStateImportThirdParty(
+          platform: 'legacy', // 'legacy' = Legacy Platform (Java CLT, default); '2026' = 2026 Platform Release (REST API)
           subdomain: 'fs-your-subdomain.finitestate.io',
           apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
           scanFilePath: 'reports/sonarqube.json',
