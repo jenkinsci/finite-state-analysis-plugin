@@ -5,7 +5,12 @@
 
 ## Introduction
 
-The Finite State Analysis Jenkins Plugin provides multiple post-build actions for integrating with the Finite State platform by calling the Finite State public API (v0) directly over HTTPS. (Earlier versions shelled out to the Finite State CLT jar, which is now deprecated; the plugin no longer downloads or runs it, and Java is no longer required on the build agent.)
+The Finite State Analysis Jenkins Plugin provides multiple post-build actions for integrating with the Finite State platform. Each build step selects a **Platform**:
+
+- **Alloy (legacy CLT)** — the default. Downloads and runs the Finite State CLT jar on the build agent, exactly as previous plugin versions did (requires Java on the agent). Use this if your organization is still on the Alloy platform.
+- **Helix (public v0 API)** — calls the Finite State public API (v0) directly over HTTPS. No CLT download and no Java required on the agent. Use this once your organization has migrated to Helix.
+
+Jobs saved before the Platform field existed default to **Alloy**, so upgrading the plugin does not change their behavior. Select **Helix** to opt into the v0 API path.
 
 This plugin gives you the ability to add Post Build actions and Pipeline steps for:
 
@@ -18,7 +23,7 @@ This plugin gives you the ability to add Post Build actions and Pipeline steps f
 - **Finite State Analyze Binary**: Upload and analyze binary files (firmware images included — large files use the API's multipart upload automatically)
 - **Finite State Import SBOM**: Import CycloneDX or SPDX SBOM files (format auto-detected)
 - **Finite State Import 3rd Party Scan**: Import third-party scan results
-- Talks to the Finite State public API directly — no CLT download, no Java required on the agent
+- Per-step **Platform** selector: Alloy (legacy CLT, default) or Helix (public v0 API — no CLT download, no Java required on the agent)
 - Secure credential management for API tokens
 - Optionally waits for the scan to complete and sets the build result accordingly
 - Logs the resolved project/version/scan IDs and a direct link to the results in the Finite State UI
@@ -96,7 +101,9 @@ The plugin will:
 
 ### How it talks to Finite State
 
-All calls go to your instance's public API at `https://<subdomain>/api/public/v0`, authenticated with the `X-Authorization` header using the API token from the selected credential. The flow per run is: resolve project → resolve/create version → upload + trigger the scan → poll status (optional). No CLT jar is downloaded and nothing is executed as a subprocess; the upload runs on the build agent so artifact bytes never transit the Jenkins controller.
+**Helix platform:** all calls go to your instance's public API at `https://<subdomain>/api/public/v0`, authenticated with the `X-Authorization` header using the API token from the selected credential. The flow per run is: resolve project → resolve/create version → upload + trigger the scan → poll status (optional). No CLT jar is downloaded and nothing is executed as a subprocess; the upload runs on the build agent so artifact bytes never transit the Jenkins controller.
+
+**Alloy platform (default):** the plugin downloads the CLT jar from `https://<subdomain>/api/config/clt` and runs it on the build agent (`java -jar …`), passing credentials via the `FINITE_STATE_AUTH_TOKEN`/`FINITE_STATE_DOMAIN` environment variables — the same behavior as plugin versions ≤ `1.092`.
 
 Upload mechanics differ by type:
 - **Binary** uploads directly to storage (single PUT, or multipart for large firmware), then starts the scan.
@@ -195,6 +202,8 @@ pipeline {
 ```
 
 Notes:
+
+- `platform` selects the transport and defaults to `'alloy'` (legacy CLT). Set `platform: 'helix'` to use the public v0 API. It applies to all three steps, e.g. `finiteStateAnalyzeBinary(platform: 'helix', subdomain: '…', apiTokenCredentialsId: '…', …)`.
 
 - Use `apiTokenCredentialsId` (the ID of a Secret Text credential containing your Finite State API token).
 

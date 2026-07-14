@@ -49,6 +49,19 @@ public abstract class BaseFiniteStateDescriptor extends BuildStepDescriptor<Publ
     }
 
     /**
+     * Populate the platform/transport selector. Alloy (legacy CLT) is listed first and is the
+     * default for jobs that never set the field, keeping existing Alloy pipelines working after an
+     * upgrade. See {@link BaseFiniteStateRecorder} and HELIX-422.
+     */
+    @RequirePOST
+    public ListBoxModel doFillPlatformItems() {
+        ListBoxModel items = new ListBoxModel();
+        items.add("Alloy (legacy CLT)", BaseFiniteStateRecorder.PLATFORM_ALLOY);
+        items.add("Helix (public v0 API)", BaseFiniteStateRecorder.PLATFORM_HELIX);
+        return items;
+    }
+
+    /**
      * Common validation helper for required values
      */
     protected FormValidation checkRequiredValue(String value) {

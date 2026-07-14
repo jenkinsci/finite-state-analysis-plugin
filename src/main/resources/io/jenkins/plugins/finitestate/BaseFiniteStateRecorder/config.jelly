@@ -2,6 +2,10 @@
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:c="/lib/credentials" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
     <st:adjunct includes="io/jenkins/plugins/finitestate/common/js/dynamic_events"/>
     <div class="finite-state-common">
+      <f:entry title="Platform" field="platform" description="Select the Finite State platform this job targets. Alloy (default) uses the legacy CLT; Helix uses the public v0 API. Leave as Alloy unless your organization has migrated to Helix.">
+        <f:select default="alloy" />
+      </f:entry>
+
       <f:entry title="Subdomain" field="subdomain">
         <f:textbox />
       </f:entry>
