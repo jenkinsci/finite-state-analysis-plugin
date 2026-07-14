@@ -132,7 +132,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     }
 
     /**
-     * Build the CLT scan-types string from the checkboxes (legacy Alloy transport).
+     * Build the CLT scan-types string from the checkboxes (legacy platform transport).
      */
     private String buildScanTypesString() {
         List<String> selectedTypes = new ArrayList<>();
@@ -159,7 +159,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     }
 
     /**
-     * Execute the CLT command for binary analysis (legacy Alloy transport).
+     * Execute the CLT command for binary analysis (legacy platform transport).
      */
     private int executeCLT(
             FilePath cltPath,

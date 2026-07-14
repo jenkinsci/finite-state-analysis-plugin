@@ -7,9 +7,10 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 /**
- * Guards the HELIX-422 backward-compatibility contract: a recorder defaults to the legacy Alloy
- * (CLT) transport, so a job saved before the {@code platform} field existed (its persisted XML has
- * no {@code platform}) keeps running against Alloy after the plugin is upgraded. Helix is opt-in.
+ * Guards the HELIX-422 backward-compatibility contract: a recorder defaults to the legacy platform
+ * (Java CLT), so a job saved before the {@code platform} field existed (its persisted XML has no
+ * {@code platform}) keeps running against the legacy platform after the plugin is upgraded. The
+ * 2026 platform release (REST API) is opt-in.
  */
 public class BaseFiniteStateRecorderPlatformTest {
 
@@ -19,39 +20,40 @@ public class BaseFiniteStateRecorderPlatformTest {
     }
 
     @Test
-    public void defaultsToAlloyWhenUnset() {
+    public void defaultsToLegacyWhenUnset() {
         BaseFiniteStateRecorder recorder = newRecorder();
-        assertEquals(BaseFiniteStateRecorder.PLATFORM_ALLOY, recorder.getPlatform());
-        assertFalse("unset platform must not route to Helix", recorder.isHelix());
+        assertEquals(BaseFiniteStateRecorder.PLATFORM_LEGACY, recorder.getPlatform());
+        assertFalse("unset platform must not route to the REST API", recorder.isRestApi());
     }
 
     @Test
-    public void blankPlatformFallsBackToAlloy() {
+    public void blankPlatformFallsBackToLegacy() {
         BaseFiniteStateRecorder recorder = newRecorder();
         recorder.setPlatform("   ");
-        assertEquals(BaseFiniteStateRecorder.PLATFORM_ALLOY, recorder.getPlatform());
-        assertFalse(recorder.isHelix());
+        assertEquals(BaseFiniteStateRecorder.PLATFORM_LEGACY, recorder.getPlatform());
+        assertFalse(recorder.isRestApi());
     }
 
     @Test
-    public void helixIsOptIn() {
+    public void restApiIsOptIn() {
         BaseFiniteStateRecorder recorder = newRecorder();
-        recorder.setPlatform(BaseFiniteStateRecorder.PLATFORM_HELIX);
-        assertTrue(recorder.isHelix());
-        assertEquals(BaseFiniteStateRecorder.PLATFORM_HELIX, recorder.getPlatform());
+        recorder.setPlatform(BaseFiniteStateRecorder.PLATFORM_2026);
+        assertTrue(recorder.isRestApi());
+        assertEquals(BaseFiniteStateRecorder.PLATFORM_2026, recorder.getPlatform());
     }
 
     @Test
-    public void explicitAlloyStaysAlloy() {
+    public void explicitLegacyStaysLegacy() {
         BaseFiniteStateRecorder recorder = newRecorder();
-        recorder.setPlatform(BaseFiniteStateRecorder.PLATFORM_ALLOY);
-        assertFalse(recorder.isHelix());
+        recorder.setPlatform(BaseFiniteStateRecorder.PLATFORM_LEGACY);
+        assertFalse(recorder.isRestApi());
     }
 
     @Test
-    public void platformMatchIsCaseInsensitive() {
+    public void unknownPlatformIsNotRestApi() {
+        // Any value other than the 2026 release resolves to the safe legacy (CLT) path.
         BaseFiniteStateRecorder recorder = newRecorder();
-        recorder.setPlatform("HELIX");
-        assertTrue(recorder.isHelix());
+        recorder.setPlatform("some-future-value");
+        assertFalse(recorder.isRestApi());
     }
 }

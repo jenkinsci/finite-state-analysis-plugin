@@ -11,18 +11,18 @@ import java.io.IOException;
 /**
  * Execution framework for Finite State analysis operations.
  *
- * <p>Dispatches to one of two transports based on {@link BaseFiniteStateRecorder#isHelix()}:
+ * <p>Dispatches to one of two transports based on {@link BaseFiniteStateRecorder#isRestApi()}:
  *
  * <ul>
- *   <li><b>Helix</b> — the public v0 REST API flow ({@link #executeViaApi}): resolve token, compute
- *       the target version, locate the workspace file, run the scan on the agent
+ *   <li><b>2026 platform release</b> — the public v0 REST API flow ({@link #executeViaApi}): resolve
+ *       token, compute the target version, locate the workspace file, run the scan on the agent
  *       ({@link FiniteStateScanCallable}) and translate the {@link ScanResult} into a build outcome.
- *   <li><b>Alloy</b> (default) — the legacy CLT flow ({@link #executeViaClt}): download the CLT jar
- *       and exec it on the agent, mapping the process exit code onto the build outcome.
+ *   <li><b>Legacy platform</b> (default) — the Java CLT flow ({@link #executeViaClt}): download the
+ *       CLT jar and exec it on the agent, mapping the process exit code onto the build outcome.
  * </ul>
  *
- * <p>Keeping both paths lets a single published plugin serve existing Alloy customers unchanged and
- * Helix customers by flipping the platform selector. See HELIX-422.
+ * <p>Keeping both paths lets a single published plugin serve existing legacy-platform jobs unchanged
+ * and 2026-platform jobs by flipping the platform selector. See HELIX-422.
  */
 public class FiniteStateExecutionFramework {
 
@@ -31,13 +31,13 @@ public class FiniteStateExecutionFramework {
     }
 
     /**
-     * Execute a Finite State analysis with common error handling and logging, routing to the Helix
-     * (v0 API) or Alloy (CLT) transport based on the recorder's selected platform.
+     * Execute a Finite State analysis with common error handling and logging, routing to the 2026
+     * platform (v0 API) or legacy platform (CLT) transport based on the recorder's selected platform.
      *
      * @param recorder Recorder that encapsulates analysis configuration and helpers
      * @param run Jenkins run/build context used for environment and logging
-     * @param workspace Workspace directory where files (and, for Alloy, the CLT) are accessed
-     * @param launcher Jenkins launcher (used by the Alloy transport to exec the CLT)
+     * @param workspace Workspace directory where files (and, for the legacy platform, the CLT) are accessed
+     * @param launcher Jenkins launcher (used by the legacy CLT transport to exec the CLT)
      * @param listener Build/task listener for console logging
      * @return true when the analysis succeeded (or was accepted, when not waiting); false on failure
      * @throws InterruptedException if execution is interrupted
@@ -74,11 +74,11 @@ public class FiniteStateExecutionFramework {
             return false;
         }
 
-        if (recorder.isHelix()) {
-            listener.getLogger().println("Platform: Helix (public v0 API)");
+        if (recorder.isRestApi()) {
+            listener.getLogger().println("Platform: 2026 Release (REST API)");
             return executeViaApi(recorder, run, workspace, listener, apiToken, analysisType);
         }
-        listener.getLogger().println("Platform: Alloy (CLT)");
+        listener.getLogger().println("Platform: Legacy (Java CLT)");
         return executeViaClt(recorder, run, workspace, launcher, listener, apiToken);
     }
 
@@ -93,7 +93,7 @@ public class FiniteStateExecutionFramework {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Helix transport (public v0 REST API)
+    // 2026 platform transport (public v0 REST API)
     // ---------------------------------------------------------------------------------------------
 
     private static boolean executeViaApi(
@@ -198,7 +198,7 @@ public class FiniteStateExecutionFramework {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Alloy transport (legacy CLT jar download-and-exec)
+    // Legacy platform transport (Java CLT jar download-and-exec)
     // ---------------------------------------------------------------------------------------------
 
     private static boolean executeViaClt(

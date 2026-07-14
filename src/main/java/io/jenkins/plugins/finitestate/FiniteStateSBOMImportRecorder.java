@@ -86,7 +86,7 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     }
 
     /**
-     * Execute the SBOM import command (legacy Alloy transport).
+     * Execute the SBOM import command (legacy platform transport).
      */
     private int executeSBOMImport(
             FilePath cltPath,

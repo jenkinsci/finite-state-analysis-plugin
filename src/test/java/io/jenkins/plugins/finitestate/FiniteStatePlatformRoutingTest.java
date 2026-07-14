@@ -23,9 +23,9 @@ import org.jvnet.hudson.test.TestBuilder;
  * {@link FiniteStateExecutionFramework} dispatch → the correct network boundary.
  *
  * <p>The subdomain points at a reserved {@code .invalid} host (RFC 2606), so both transports fail
- * fast at connect. We assert on which transport was <em>selected and attempted</em> — the Alloy run
- * must reach the CLT download endpoint ({@code /api/config/clt}) and the Helix run must go through
- * the v0 API path — not on scan success (which would require a live backend).
+ * fast at connect. We assert on which transport was <em>selected and attempted</em> — the legacy run
+ * must reach the CLT download endpoint ({@code /api/config/clt}) and the 2026-release run must go
+ * through the v0 API path — not on scan success (which would require a live backend).
  */
 public class FiniteStatePlatformRoutingTest {
 
@@ -68,23 +68,25 @@ public class FiniteStatePlatformRoutingTest {
     }
 
     @Test
-    public void alloyPlatformUsesCltTransport() throws Exception {
-        String log = runAndGetLog(BaseFiniteStateRecorder.PLATFORM_ALLOY);
-        assertTrue("should announce the Alloy transport:\n" + log, log.contains("Platform: Alloy (CLT)"));
+    public void legacyPlatformUsesCltTransport() throws Exception {
+        String log = runAndGetLog(BaseFiniteStateRecorder.PLATFORM_LEGACY);
+        assertTrue("should announce the legacy transport:\n" + log, log.contains("Platform: Legacy (Java CLT)"));
         assertTrue("should attempt the CLT download endpoint:\n" + log, log.contains("/api/config/clt"));
-        assertFalse("must not touch the Helix API path:\n" + log, log.contains("via the Finite State API"));
+        assertFalse("must not touch the REST API path:\n" + log, log.contains("via the Finite State API"));
     }
 
     @Test
-    public void helixPlatformUsesV0Transport() throws Exception {
-        String log = runAndGetLog(BaseFiniteStateRecorder.PLATFORM_HELIX);
-        assertTrue("should announce the Helix transport:\n" + log, log.contains("Platform: Helix (public v0 API)"));
+    public void restApiPlatformUsesV0Transport() throws Exception {
+        String log = runAndGetLog(BaseFiniteStateRecorder.PLATFORM_2026);
+        assertTrue(
+                "should announce the 2026 release transport:\n" + log,
+                log.contains("Platform: 2026 Release (REST API)"));
         assertTrue("should go through the v0 API path:\n" + log, log.contains("via the Finite State API"));
         assertFalse("must not download the CLT:\n" + log, log.contains("/api/config/clt"));
     }
 
     @Test
-    public void defaultPlatformIsAlloy() throws Exception {
+    public void defaultPlatformIsLegacy() throws Exception {
         // No setPlatform() call — mirrors a job whose persisted config predates the field.
         FreeStyleProject p = j.createFreeStyleProject();
         p.getBuildersList().add(new WriteScanFile());
@@ -93,6 +95,6 @@ public class FiniteStatePlatformRoutingTest {
         r.setProjectVersion("1.0");
         p.getPublishersList().add(r);
         String log = j.getLog(p.scheduleBuild2(0).get());
-        assertTrue("unset platform must default to Alloy:\n" + log, log.contains("Platform: Alloy (CLT)"));
+        assertTrue("unset platform must default to Legacy:\n" + log, log.contains("Platform: Legacy (Java CLT)"));
     }
 }

@@ -20,27 +20,27 @@ import org.kohsuke.stapler.DataBoundSetter;
  * <p>The plugin supports two transports, selected per build step via {@link #getPlatform()}:
  *
  * <ul>
- *   <li><b>{@value #PLATFORM_ALLOY}</b> (default) — the legacy Alloy path: download and exec the CLT
- *       jar. Kept so existing Alloy jobs keep working unchanged after upgrading the plugin.
- *   <li><b>{@value #PLATFORM_HELIX}</b> — the Helix path: direct calls to the public v0 REST API,
- *       described via {@link #configureRequest(FiniteStateScanRequest)}.
+ *   <li><b>{@value #PLATFORM_LEGACY}</b> (default) — the legacy platform: download and exec the Java
+ *       CLT jar. Kept so existing jobs keep working unchanged after upgrading the plugin.
+ *   <li><b>{@value #PLATFORM_2026}</b> — the 2026 platform release: direct calls to the public v0
+ *       REST API, described via {@link #configureRequest(FiniteStateScanRequest)}.
  * </ul>
  *
  * <p>{@link FiniteStateExecutionFramework} inspects the selected platform and drives the matching
- * flow. The default is Alloy so that a job saved before this field existed (no {@code platform} in
- * its persisted XML) deserializes to the legacy behavior — an upgrade never silently retargets an
- * Alloy customer at the Helix API. See HELIX-422.
+ * flow. The default is the legacy platform so that a job saved before this field existed (no
+ * {@code platform} in its persisted XML) deserializes to the legacy behavior — an upgrade never
+ * silently retargets a job at the 2026 REST API. See HELIX-422.
  */
 public abstract class BaseFiniteStateRecorder extends Recorder implements SimpleBuildStep {
 
     /** Default poll timeout (minutes) when waiting for scan completion (FR-7). */
     public static final int DEFAULT_POLL_TIMEOUT_MINUTES = 30;
 
-    /** Legacy Alloy transport (CLT jar download-and-exec). Default for backward compatibility. */
-    public static final String PLATFORM_ALLOY = "alloy";
+    /** Legacy platform transport (Java CLT jar download-and-exec). Default for backward compatibility. */
+    public static final String PLATFORM_LEGACY = "legacy";
 
-    /** Helix transport (direct public v0 REST API). */
-    public static final String PLATFORM_HELIX = "helix";
+    /** 2026 platform release transport (direct public v0 REST API). */
+    public static final String PLATFORM_2026 = "2026";
 
     protected String subdomain;
     // Explicit name indicating this is a Jenkins Credentials ID (Secret Text) holding the API token.
@@ -51,7 +51,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     protected Boolean preRelease;
     protected Boolean waitForCompletion;
     protected Integer pollTimeoutMinutes;
-    // Which backend/transport to use. Null (absent from persisted config) => legacy Alloy/CLT path.
+    // Which platform/transport to use. Null (absent from persisted config) => legacy CLT path.
     protected String platform;
 
     protected BaseFiniteStateRecorder() {
@@ -94,17 +94,17 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     }
 
     /**
-     * Selected transport. Defaults to {@link #PLATFORM_ALLOY} when unset (including jobs whose
+     * Selected transport. Defaults to {@link #PLATFORM_LEGACY} when unset (including jobs whose
      * persisted config predates this field), so upgrading the plugin never changes an existing
-     * Alloy job's behavior.
+     * job's behavior.
      */
     public String getPlatform() {
-        return platform != null && !platform.isBlank() ? platform : PLATFORM_ALLOY;
+        return platform != null && !platform.isBlank() ? platform : PLATFORM_LEGACY;
     }
 
-    /** True when this step targets the Helix public v0 API instead of the legacy CLT. */
-    public boolean isHelix() {
-        return PLATFORM_HELIX.equalsIgnoreCase(getPlatform());
+    /** True when this step targets the 2026 platform's public v0 REST API instead of the legacy CLT. */
+    public boolean isRestApi() {
+        return PLATFORM_2026.equalsIgnoreCase(getPlatform());
     }
 
     // Common setters
@@ -183,7 +183,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     }
 
     /**
-     * Get CLT path using the shared CLTManager (legacy Alloy transport only).
+     * Get CLT path using the shared CLTManager (legacy platform transport only).
      */
     protected FilePath getCLTPath(FilePath workspace, String subdomain, String apiToken, TaskListener listener)
             throws IOException, InterruptedException {
@@ -193,7 +193,7 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
 
     /**
      * Build the environment variables required by the CLT for authentication and domain routing
-     * (legacy Alloy transport only).
+     * (legacy platform transport only).
      */
     protected String[] buildCLTEnvironment(String apiToken) {
         return new String[] {
@@ -273,14 +273,14 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
 
     /**
      * Populate the type-specific portion of the scan request (kind + per-analysis fields), used by
-     * the Helix v0 transport. The framework fills the common fields (subdomain, token, project,
+     * the 2026 platform's v0 REST transport. The framework fills the common fields (subdomain, token, project,
      * version, polling, etc.).
      */
     protected abstract void configureRequest(FiniteStateScanRequest request);
 
     /**
-     * Execute the analysis via the legacy Alloy CLT transport. Invoked by
-     * {@link FiniteStateExecutionFramework} only when {@link #isHelix()} is {@code false}.
+     * Execute the analysis via the legacy platform's CLT transport. Invoked by
+     * {@link FiniteStateExecutionFramework} only when {@link #isRestApi()} is {@code false}.
      *
      * @return CLT process exit code (0 = success, 1 = completed with findings, other = error)
      */

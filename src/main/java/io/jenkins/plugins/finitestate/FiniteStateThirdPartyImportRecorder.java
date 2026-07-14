@@ -97,7 +97,7 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
     }
 
     /**
-     * Execute the third party import command (legacy Alloy transport).
+     * Execute the third party import command (legacy platform transport).
      */
     private int executeThirdPartyImport(
             FilePath cltPath,
