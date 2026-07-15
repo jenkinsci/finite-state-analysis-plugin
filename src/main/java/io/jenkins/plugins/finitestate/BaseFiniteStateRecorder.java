@@ -16,8 +16,31 @@ import org.kohsuke.stapler.DataBoundSetter;
 /**
  * Abstract base class for all Finite State recorders.
  * Contains common functionality shared across different analysis types.
+ *
+ * <p>The plugin supports two transports, selected per build step via {@link #getPlatform()}:
+ *
+ * <ul>
+ *   <li><b>{@value #PLATFORM_LEGACY}</b> (default) — the legacy platform: download and exec the Java
+ *       CLT jar. Kept so existing jobs keep working unchanged after upgrading the plugin.
+ *   <li><b>{@value #PLATFORM_2026}</b> — the 2026 platform release: direct calls to the public v0
+ *       REST API, described via {@link #configureRequest(FiniteStateScanRequest)}.
+ * </ul>
+ *
+ * <p>{@link FiniteStateExecutionFramework} inspects the selected platform and drives the matching
+ * flow. The default is the legacy platform so that a job saved before this field existed (no
+ * {@code platform} in its persisted XML) deserializes to the legacy behavior — an upgrade never
+ * silently retargets a job at the 2026 REST API. See HELIX-422.
  */
 public abstract class BaseFiniteStateRecorder extends Recorder implements SimpleBuildStep {
+
+    /** Default poll timeout (minutes) when waiting for scan completion (FR-7). */
+    public static final int DEFAULT_POLL_TIMEOUT_MINUTES = 30;
+
+    /** Legacy platform transport (Java CLT jar download-and-exec). Default for backward compatibility. */
+    public static final String PLATFORM_LEGACY = "legacy";
+
+    /** 2026 platform release transport (direct public v0 REST API). */
+    public static final String PLATFORM_2026 = "2026";
 
     protected String subdomain;
     // Explicit name indicating this is a Jenkins Credentials ID (Secret Text) holding the API token.
@@ -26,6 +49,10 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     protected String projectVersion;
     protected Boolean externalizableId;
     protected Boolean preRelease;
+    protected Boolean waitForCompletion;
+    protected Integer pollTimeoutMinutes;
+    // Which platform/transport to use. Null (absent from persisted config) => legacy CLT path.
+    protected String platform;
 
     protected BaseFiniteStateRecorder() {
         // Default constructor for inheritance
@@ -54,6 +81,30 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
 
     public boolean getPreRelease() {
         return preRelease != null ? preRelease : false;
+    }
+
+    public boolean getWaitForCompletion() {
+        // Default false: submit the scan and return (the CLT-style flow) so the build doesn't block;
+        // the user follows progress in the Finite State UI. Enable to block on terminal status.
+        return waitForCompletion != null ? waitForCompletion : false;
+    }
+
+    public int getPollTimeoutMinutes() {
+        return pollTimeoutMinutes != null && pollTimeoutMinutes > 0 ? pollTimeoutMinutes : DEFAULT_POLL_TIMEOUT_MINUTES;
+    }
+
+    /**
+     * Selected transport. Defaults to {@link #PLATFORM_LEGACY} when unset (including jobs whose
+     * persisted config predates this field), so upgrading the plugin never changes an existing
+     * job's behavior.
+     */
+    public String getPlatform() {
+        return platform != null && !platform.isBlank() ? platform : PLATFORM_LEGACY;
+    }
+
+    /** True when this step targets the 2026 platform's public v0 REST API instead of the legacy CLT. */
+    public boolean isRestApi() {
+        return PLATFORM_2026.equalsIgnoreCase(getPlatform());
     }
 
     // Common setters
@@ -88,6 +139,21 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
         this.preRelease = preRelease;
     }
 
+    @DataBoundSetter
+    public void setWaitForCompletion(boolean waitForCompletion) {
+        this.waitForCompletion = waitForCompletion;
+    }
+
+    @DataBoundSetter
+    public void setPollTimeoutMinutes(int pollTimeoutMinutes) {
+        this.pollTimeoutMinutes = pollTimeoutMinutes;
+    }
+
+    @DataBoundSetter
+    public void setPlatform(String platform) {
+        this.platform = platform;
+    }
+
     /**
      * Get file from workspace - common utility method (pipeline and freestyle)
      */
@@ -117,12 +183,22 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     }
 
     /**
-     * Get CLT path using the shared CLTManager
+     * Get CLT path using the shared CLTManager (legacy platform transport only).
      */
     protected FilePath getCLTPath(FilePath workspace, String subdomain, String apiToken, TaskListener listener)
             throws IOException, InterruptedException {
         String cltUrl = "https://" + subdomain + "/api/config/clt";
         return CLTManager.getOrDownloadCLT(cltUrl, apiToken, subdomain, workspace, listener);
+    }
+
+    /**
+     * Build the environment variables required by the CLT for authentication and domain routing
+     * (legacy platform transport only).
+     */
+    protected String[] buildCLTEnvironment(String apiToken) {
+        return new String[] {
+            "FINITE_STATE_AUTH_TOKEN=" + apiToken, "FINITE_STATE_DOMAIN=" + subdomain,
+        };
     }
 
     /**
@@ -172,25 +248,41 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     }
 
     /**
-     * Add result to consolidated results action
+     * Add a successful/structured result (with scan metadata) to the consolidated results action.
+     */
+    protected void addConsolidatedResult(
+            Run<?, ?> run,
+            String analysisType,
+            String projectName,
+            String consoleOutput,
+            String status,
+            String url,
+            String scanIds,
+            String scanStatus) {
+        FiniteStateConsolidatedResultsAction.getOrCreate(run)
+                .addResult(analysisType, projectName, consoleOutput, status, url, scanIds, scanStatus);
+    }
+
+    /**
+     * Add a minimal result (error/validation paths that have no scan metadata yet).
      */
     protected void addConsolidatedResult(
             Run<?, ?> run, String analysisType, String projectName, String consoleOutput, String status, String url) {
-        FiniteStateConsolidatedResultsAction.getOrCreate(run)
-                .addResult(analysisType, projectName, consoleOutput, status, url);
+        addConsolidatedResult(run, analysisType, projectName, consoleOutput, status, url, "N/A", status);
     }
 
     /**
-     * Build the environment variables required by the CLT for authentication and domain routing.
+     * Populate the type-specific portion of the scan request (kind + per-analysis fields), used by
+     * the 2026 platform's v0 REST transport. The framework fills the common fields (subdomain, token, project,
+     * version, polling, etc.).
      */
-    protected String[] buildCLTEnvironment(String apiToken) {
-        return new String[] {
-            "FINITE_STATE_AUTH_TOKEN=" + apiToken, "FINITE_STATE_DOMAIN=" + subdomain,
-        };
-    }
+    protected abstract void configureRequest(FiniteStateScanRequest request);
 
     /**
-     * Abstract method for executing the specific analysis
+     * Execute the analysis via the legacy platform's CLT transport. Invoked by
+     * {@link FiniteStateExecutionFramework} only when {@link #isRestApi()} is {@code false}.
+     *
+     * @return CLT process exit code (0 = success, 1 = completed with findings, other = error)
      */
     protected abstract int executeAnalysis(
             FilePath cltPath,

@@ -42,6 +42,12 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     }
 
     @Override
+    protected void configureRequest(FiniteStateScanRequest request) {
+        request.setKind(FiniteStateScanRequest.Kind.SBOM);
+        // CycloneDX vs SPDX is auto-detected from the file (FiniteStateApiClient.detectSbomFormat).
+    }
+
+    @Override
     protected int executeAnalysis(
             FilePath cltPath,
             FilePath filePath,
@@ -80,7 +86,7 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     }
 
     /**
-     * Execute the SBOM import command
+     * Execute the SBOM import command (legacy platform transport).
      */
     private int executeSBOMImport(
             FilePath cltPath,

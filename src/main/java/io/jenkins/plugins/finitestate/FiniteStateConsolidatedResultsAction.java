@@ -18,7 +18,18 @@ public class FiniteStateConsolidatedResultsAction implements RunAction2, Seriali
 
     public void addResult(
             String analysisType, String projectName, String consoleOutput, String status, String scanUrl) {
-        results.add(new AnalysisResult(analysisType, projectName, consoleOutput, status, scanUrl));
+        results.add(new AnalysisResult(analysisType, projectName, consoleOutput, status, scanUrl, "N/A", status));
+    }
+
+    public void addResult(
+            String analysisType,
+            String projectName,
+            String consoleOutput,
+            String status,
+            String scanUrl,
+            String scanIds,
+            String scanStatus) {
+        results.add(new AnalysisResult(analysisType, projectName, consoleOutput, status, scanUrl, scanIds, scanStatus));
     }
 
     public List<AnalysisResult> getResults() {
@@ -75,14 +86,24 @@ public class FiniteStateConsolidatedResultsAction implements RunAction2, Seriali
         private String consoleOutput;
         private String status;
         private String scanUrl;
+        private String scanIds;
+        private String scanStatus;
 
         public AnalysisResult(
-                String analysisType, String projectName, String consoleOutput, String status, String scanUrl) {
+                String analysisType,
+                String projectName,
+                String consoleOutput,
+                String status,
+                String scanUrl,
+                String scanIds,
+                String scanStatus) {
             this.analysisType = analysisType;
             this.projectName = projectName;
             this.consoleOutput = consoleOutput;
             this.status = status;
             this.scanUrl = scanUrl;
+            this.scanIds = scanIds;
+            this.scanStatus = scanStatus;
         }
 
         public String getAnalysisType() {
@@ -103,6 +124,14 @@ public class FiniteStateConsolidatedResultsAction implements RunAction2, Seriali
 
         public String getScanUrl() {
             return scanUrl;
+        }
+
+        public String getScanIds() {
+            return scanIds;
+        }
+
+        public String getScanStatus() {
+            return scanStatus;
         }
     }
 }

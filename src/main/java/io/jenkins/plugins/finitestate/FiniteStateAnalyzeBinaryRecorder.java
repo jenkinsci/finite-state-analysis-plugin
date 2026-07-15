@@ -82,6 +82,18 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     }
 
     @Override
+    protected void configureRequest(FiniteStateScanRequest request) {
+        request.setKind(FiniteStateScanRequest.Kind.BINARY);
+        // The four checkboxes map onto the v0 BinaryScanConfig in FiniteStateApiClient
+        // (configEnabled→configurationAnalysis, reachabilityEnabled&&sca→vulnerabilityAnalysis,
+        // sastEnabled→binarySast). binary_sca is always enabled server-side.
+        request.setScaEnabled(getScaEnabled());
+        request.setSastEnabled(getSastEnabled());
+        request.setConfigEnabled(getConfigEnabled());
+        request.setReachabilityEnabled(getReachabilityEnabled());
+    }
+
+    @Override
     protected int executeAnalysis(
             FilePath cltPath,
             FilePath filePath,
@@ -97,7 +109,6 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
                 filePath,
                 projectName,
                 projectVersion,
-                buildScanTypesString(),
                 getPreRelease(),
                 apiToken,
                 workspace,
@@ -121,7 +132,7 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     }
 
     /**
-     * Build scan types string from checkboxes
+     * Build the CLT scan-types string from the checkboxes (legacy platform transport).
      */
     private String buildScanTypesString() {
         List<String> selectedTypes = new ArrayList<>();
@@ -148,14 +159,13 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     }
 
     /**
-     * Execute the CLT command for binary analysis
+     * Execute the CLT command for binary analysis (legacy platform transport).
      */
     private int executeCLT(
             FilePath cltPath,
             FilePath binaryFile,
             String projectName,
             String projectVersion,
-            String scanTypes,
             boolean preRelease,
             String apiToken,
             FilePath workspace,

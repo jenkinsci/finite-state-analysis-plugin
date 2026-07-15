@@ -52,6 +52,12 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
     }
 
     @Override
+    protected void configureRequest(FiniteStateScanRequest request) {
+        request.setKind(FiniteStateScanRequest.Kind.THIRD_PARTY);
+        request.setScanType(scanType);
+    }
+
+    @Override
     protected int executeAnalysis(
             FilePath cltPath,
             FilePath filePath,
@@ -91,7 +97,7 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
     }
 
     /**
-     * Execute the third party import command
+     * Execute the third party import command (legacy platform transport).
      */
     private int executeThirdPartyImport(
             FilePath cltPath,
@@ -144,7 +150,18 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
         @RequirePOST
         // lgtm[jenkins/no-permission-check]
         public FormValidation doCheckScanType(@QueryParameter String value) throws IOException, ServletException {
-            return checkRequiredValue(value);
+            if (value == null || value.isBlank()) {
+                return FormValidation.error("This field is required");
+            }
+            // FR-6: validate against the supported third-party scanner list (single source of truth
+            // below). The API also validates server-side at /process-third-party time.
+            for (ListBoxModel.Option option : doFillScanTypeItems()) {
+                if (!option.value.isBlank() && option.value.equals(value)) {
+                    return FormValidation.ok();
+                }
+            }
+            return FormValidation.error(
+                    "Unknown scan type '" + value + "'. Select a supported third-party scanner from the list.");
         }
 
         @RequirePOST
