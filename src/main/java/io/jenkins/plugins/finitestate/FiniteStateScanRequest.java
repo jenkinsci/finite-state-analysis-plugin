@@ -1,5 +1,6 @@
 package io.jenkins.plugins.finitestate;
 
+import hudson.util.Secret;
 import java.io.Serializable;
 
 /**
@@ -20,7 +21,9 @@ public class FiniteStateScanRequest implements Serializable {
 
     // --- Common ---
     private String subdomain;
-    private String apiToken;
+    // Stored as Secret so the serialized form (shipped to the agent over remoting) is encrypted,
+    // never plaintext — see Jenkins Security Scan "Plaintext password storage".
+    private Secret apiToken;
     private String projectName;
     private String version;
     private boolean preRelease;
@@ -47,12 +50,12 @@ public class FiniteStateScanRequest implements Serializable {
         this.subdomain = subdomain;
     }
 
-    public String getApiToken() {
+    public Secret getApiToken() {
         return apiToken;
     }
 
     public void setApiToken(String apiToken) {
-        this.apiToken = apiToken;
+        this.apiToken = apiToken == null ? null : Secret.fromString(apiToken);
     }
 
     public String getProjectName() {

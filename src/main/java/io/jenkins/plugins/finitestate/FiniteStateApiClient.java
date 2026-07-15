@@ -1,6 +1,7 @@
 package io.jenkins.plugins.finitestate;
 
 import hudson.model.TaskListener;
+import hudson.util.Secret;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -49,12 +50,12 @@ final class FiniteStateApiClient {
     private static final Set<String> FAILURE_TERMINAL = Set.of("ERROR", "CANCELLED", "UPLOAD_FAILED");
 
     private final String baseUrl;
-    private final String apiToken;
+    private final Secret apiToken;
     private final String subdomain;
     private final TaskListener listener;
     private final HttpClient http;
 
-    FiniteStateApiClient(String subdomain, String apiToken, TaskListener listener) {
+    FiniteStateApiClient(String subdomain, Secret apiToken, TaskListener listener) {
         this.subdomain = subdomain;
         this.baseUrl = "https://" + subdomain + "/api/public/v0";
         this.apiToken = apiToken;
@@ -453,7 +454,7 @@ final class FiniteStateApiClient {
 
     private HttpRequest.Builder apiReq(String path) {
         return HttpRequest.newBuilder(URI.create(baseUrl + path))
-                .header("X-Authorization", apiToken)
+                .header("X-Authorization", apiToken.getPlainText())
                 .header("Accept", "application/json")
                 .header("User-Agent", USER_AGENT)
                 .timeout(Duration.ofMinutes(2));
