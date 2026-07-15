@@ -1,0 +1,13 @@
+<div>
+  Selects which Finite State platform (and transport) this build step targets:
+  <ul>
+    <li><b>Legacy Platform (Java CLT)</b> &mdash; the default. Downloads and runs the Finite State
+      Java command-line tool (CLT) on the build agent, exactly as previous plugin versions did.
+      Requires Java on the agent. Choose this if your organization is still on the legacy platform.</li>
+    <li><b>2026 Platform Release (REST API)</b> &mdash; calls the Finite State public v0 REST API
+      directly. No CLT download and no Java required on the agent. Choose this only once your
+      organization has been upgraded to the 2026 platform release.</li>
+  </ul>
+  Jobs saved before this option existed default to <b>Legacy Platform</b>, so upgrading the plugin
+  does not change their behavior.
+</div>

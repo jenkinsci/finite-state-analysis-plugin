@@ -1,8 +1,13 @@
 package io.jenkins.plugins.finitestate;
 
 import hudson.Extension;
+import hudson.FilePath;
+import hudson.Launcher;
+import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import javax.servlet.ServletException;
 import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -43,6 +48,29 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     }
 
     @Override
+    protected int executeAnalysis(
+            FilePath cltPath,
+            FilePath filePath,
+            String projectName,
+            String projectVersion,
+            String apiToken,
+            FilePath workspace,
+            Launcher launcher,
+            TaskListener listener)
+            throws IOException, InterruptedException {
+        return executeSBOMImport(
+                cltPath,
+                filePath,
+                projectName,
+                projectVersion,
+                getPreRelease(),
+                apiToken,
+                workspace,
+                launcher,
+                listener);
+    }
+
+    @Override
     protected String getAnalysisType() {
         return "SBOM Import";
     }
@@ -55,6 +83,46 @@ public class FiniteStateSBOMImportRecorder extends BaseFiniteStateRecorder {
     @Override
     protected String getFilePathValue() {
         return sbomFilePath;
+    }
+
+    /**
+     * Execute the SBOM import command (legacy platform transport).
+     */
+    private int executeSBOMImport(
+            FilePath cltPath,
+            FilePath sbomFile,
+            String projectName,
+            String projectVersion,
+            boolean preRelease,
+            String apiToken,
+            FilePath workspace,
+            Launcher launcher,
+            TaskListener listener)
+            throws IOException, InterruptedException {
+
+        List<String> command = new ArrayList<>();
+        command.add("java");
+        command.add("-jar");
+        command.add(cltPath.getRemote());
+        command.add("--import");
+        command.add("--name=" + projectName);
+        command.add("--version=" + projectVersion);
+        command.add(sbomFile.getRemote());
+
+        if (preRelease) {
+            command.add("--pre-release");
+        }
+
+        listener.getLogger().println("Executing command: " + String.join(" ", command));
+
+        Launcher.ProcStarter starter = launcher.launch();
+        starter.cmds(command);
+        starter.envs(buildCLTEnvironment(apiToken));
+        starter.stdout(listener.getLogger());
+        starter.stderr(listener.getLogger());
+        starter.pwd(workspace);
+
+        return starter.join();
     }
 
     @Symbol("finiteStateImportSbom")

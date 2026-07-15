@@ -2,6 +2,10 @@
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:c="/lib/credentials" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
     <st:adjunct includes="io/jenkins/plugins/finitestate/common/js/dynamic_events"/>
     <div class="finite-state-common">
+      <f:entry title="Platform" field="platform" description="Select the Finite State platform this job targets. Legacy Platform (default) uses the Java CLT; the 2026 Platform Release uses the public v0 REST API. Leave as Legacy Platform unless your organization has been upgraded to the 2026 platform release.">
+        <f:select default="legacy" />
+      </f:entry>
+
       <f:entry title="Subdomain" field="subdomain">
         <f:textbox />
       </f:entry>

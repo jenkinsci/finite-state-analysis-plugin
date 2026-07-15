@@ -1,8 +1,13 @@
 package io.jenkins.plugins.finitestate;
 
 import hudson.Extension;
+import hudson.FilePath;
+import hudson.Launcher;
+import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import javax.servlet.ServletException;
 import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -89,6 +94,29 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     }
 
     @Override
+    protected int executeAnalysis(
+            FilePath cltPath,
+            FilePath filePath,
+            String projectName,
+            String projectVersion,
+            String apiToken,
+            FilePath workspace,
+            Launcher launcher,
+            TaskListener listener)
+            throws IOException, InterruptedException {
+        return executeCLT(
+                cltPath,
+                filePath,
+                projectName,
+                projectVersion,
+                getPreRelease(),
+                apiToken,
+                workspace,
+                launcher,
+                listener);
+    }
+
+    @Override
     protected String getAnalysisType() {
         return "Binary Analysis";
     }
@@ -101,6 +129,88 @@ public class FiniteStateAnalyzeBinaryRecorder extends BaseFiniteStateRecorder {
     @Override
     protected String getFilePathValue() {
         return binaryFilePath;
+    }
+
+    /**
+     * Build the CLT scan-types string from the checkboxes (legacy platform transport).
+     */
+    private String buildScanTypesString() {
+        List<String> selectedTypes = new ArrayList<>();
+
+        if (getScaEnabled()) {
+            selectedTypes.add("sca");
+        }
+        if (getSastEnabled()) {
+            selectedTypes.add("sast");
+        }
+        if (getConfigEnabled()) {
+            selectedTypes.add("config");
+        }
+        if (getReachabilityEnabled() && getScaEnabled()) {
+            selectedTypes.add("vulnerability_analysis");
+        }
+
+        // If no scans are selected, default to sca (required)
+        if (selectedTypes.isEmpty()) {
+            selectedTypes.add("sca");
+        }
+
+        return String.join(",", selectedTypes);
+    }
+
+    /**
+     * Execute the CLT command for binary analysis (legacy platform transport).
+     */
+    private int executeCLT(
+            FilePath cltPath,
+            FilePath binaryFile,
+            String projectName,
+            String projectVersion,
+            boolean preRelease,
+            String apiToken,
+            FilePath workspace,
+            Launcher launcher,
+            TaskListener listener)
+            throws IOException, InterruptedException {
+
+        // Build the command
+        List<String> command = new ArrayList<>();
+        command.add("java");
+        command.add("-jar");
+        command.add(cltPath.getRemote());
+        command.add("--upload");
+        command.add(binaryFile.getRemote());
+        command.add("--name=" + projectName);
+
+        if (projectVersion != null && !projectVersion.isBlank()) {
+            command.add("--version=" + projectVersion);
+        }
+
+        String computedScanTypes = buildScanTypesString();
+        if (computedScanTypes != null && !computedScanTypes.isBlank()) {
+            command.add("--upload=" + computedScanTypes);
+        }
+
+        if (preRelease) {
+            command.add("--pre-release");
+        }
+
+        listener.getLogger().println("Executing command: " + String.join(" ", command));
+
+        Launcher.ProcStarter starter = launcher.launch();
+        starter.cmds(command);
+        starter.envs(buildCLTEnvironment(apiToken));
+        starter.stdout(listener.getLogger());
+        starter.stderr(listener.getLogger());
+        starter.pwd(workspace);
+
+        int exitCode = starter.join();
+
+        if (exitCode != 0) {
+            listener.getLogger().println("Finite State scan failed with exit code: " + exitCode);
+        }
+
+        return exitCode;
     }
 
     @Symbol("finiteStateAnalyzeBinary")
