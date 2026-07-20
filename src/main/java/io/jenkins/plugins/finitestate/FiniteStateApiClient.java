@@ -13,10 +13,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -44,6 +42,15 @@ final class FiniteStateApiClient {
     private static final int MAX_ATTEMPTS = 3; // NFR-2: up to 3 attempts on transient failures
     private static final long POLL_INTERVAL_MS = 10_000L;
 
+    // Multipart threshold + client-side part-layout fallback. The fallback is used ONLY when the
+    // backend omits a server-computed plan (the legacy backend); the current backend's façade returns
+    // partSize/partCount and we honor those. Mirrors the proven mb-api client contract.
+    private static final long MB = 1024L * 1024L;
+    private static final long SINGLE_PUT_MAX_BYTES = 100L * MB; // > 100 MB → request multipart
+    private static final long DEFAULT_PART_SIZE_BYTES = 64L * MB;
+    private static final long MIN_PART_SIZE_BYTES = 5L * MB;
+    private static final int MAX_PARTS = 10_000;
+
     // Terminal scan statuses (ScanStatusEnum in finite-state-api/src/schemas/common.schema.ts).
     private static final Set<String> SUCCESS_TERMINAL =
             Set.of("COMPLETED", "COMPLETED_WITH_WARNINGS", "NOT_APPLICABLE");
@@ -70,7 +77,12 @@ final class FiniteStateApiClient {
     // Orchestration — one method per analysis type. Populate the ScanResult.
     // ========================================================================
 
-    /** Binary analysis: create context → upload (put/multipart) → start → (optional) poll. */
+    /**
+     * Binary analysis via the mb-api upload façade ({@code POST /scans/upload}). This single path
+     * works against both the legacy backend (which serves the contract natively) and the current
+     * backend (which exposes the same contract as a façade over its native binary service):
+     * create upload context → upload (single PUT or multipart) → start → (optional) poll.
+     */
     void runBinary(File file, FiniteStateScanRequest req, ScanResult result)
             throws FiniteStateApiException, InterruptedException, IOException {
         String projectId = resolveProjectId(req.getProjectName());
@@ -79,20 +91,23 @@ final class FiniteStateApiClient {
         result.setVersionId(versionId);
         result.setUiUrl(buildUiUrl(subdomain, projectId, versionId));
 
-        JSONObject scanConfig = buildBinaryScanConfig(req);
-        String sha256 = sha256(file);
-        BinaryContext ctx = createBinaryScanContext(versionId, file.getName(), file.length(), scanConfig, sha256);
+        long size = file.length();
+        List<String> types = buildScanTypes(req);
+        boolean wantMultipart = size > SINGLE_PUT_MAX_BYTES;
+        ScanUploadContext ctx = createScanUpload(versionId, file.getName(), types, wantMultipart, size);
 
-        if ("multipart".equals(ctx.uploadMethod)) {
-            log("Uploading binary via multipart (" + ctx.partCount + " parts)...");
-            JSONArray parts = uploadMultipart(file, ctx);
-            completeBinaryUpload(ctx.scanContextId, parts);
+        // Branch on what the server actually created (ctx.multipartUpload), not just what we asked for.
+        if (ctx.multipartUpload) {
+            PartPlan plan = resolvePartPlan(ctx, size);
+            log("Uploading binary via multipart (" + plan.partCount + " parts)...");
+            JSONObject eTags = uploadMultipart(file, ctx, plan);
+            completeBinaryUpload(ctx.scanId, ctx.s3UploadId, eTags);
         } else {
             log("Uploading binary...");
             putFile(ctx.uploadUrl, file, "application/octet-stream");
         }
 
-        List<String> scanIds = startBinaryScan(ctx.scanContextId);
+        List<String> scanIds = startBinaryScan(ctx.scanId);
         scanIds.forEach(result::addScanId);
         log("Started " + scanIds.size() + " scan(s) for binary analysis.");
 
@@ -250,83 +265,112 @@ final class FiniteStateApiClient {
     // Binary scan endpoints
     // ========================================================================
 
-    BinaryContext createBinaryScanContext(
-            String versionId, String filename, long size, JSONObject scanConfig, String sha256)
+    ScanUploadContext createScanUpload(
+            String versionId, String filename, List<String> types, boolean multipartUpload, long size)
             throws FiniteStateApiException, InterruptedException {
         JSONObject body = new JSONObject();
-        body.element("projectVersionId", versionId);
         body.element("filename", filename);
+        JSONArray typesArr = new JSONArray();
+        for (String t : types) {
+            typesArr.add(t);
+        }
+        body.element("types", typesArr);
+        body.element("multipartUpload", multipartUpload);
         body.element("fileSizeBytes", size);
-        body.element("contentType", "application/octet-stream");
-        if (scanConfig != null) {
-            body.element("scanConfig", scanConfig);
-        }
-        if (sha256 != null) {
-            body.element("sha256", sha256);
-        }
         HttpResponse<String> resp = execPost(
-                apiReq("/scans/binary")
+                apiReq("/scans/upload?projectVersionId=" + enc(versionId))
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                         .build(),
-                "Create binary scan context");
+                "Create scan upload");
         JSONObject n = asObject(parse(resp.body()));
-        BinaryContext ctx = new BinaryContext();
-        ctx.scanContextId = requireText(n, "scanContextId", "Create binary scan context");
-        ctx.uploadMethod = optString(n, "uploadMethod", "put");
+        ScanUploadContext ctx = new ScanUploadContext();
+        ctx.scanId = requireText(n, "scanId", "Create scan upload");
+        ctx.multipartUpload = n.optBoolean("multipartUpload", false);
         ctx.uploadUrl = optString(n, "uploadUrl", null);
+        ctx.s3UploadId = optString(n, "s3UploadId", null);
         ctx.partSize = n.optLong("partSize", 0);
         ctx.partCount = n.optInt("partCount", 0);
         return ctx;
     }
 
-    private JSONArray uploadMultipart(File file, BinaryContext ctx)
+    /**
+     * Determine the multipart part layout. The current backend's façade returns a server-computed
+     * plan (partSize/partCount derived from fileSizeBytes) and its {@code /complete} rejects any other
+     * count ("Expected N parts, received M"), so honor the server's plan whenever EITHER field is
+     * present — {@code partCount} is what {@code /complete} validates, so it wins. The legacy backend
+     * omits both fields, so we fall back to a client-computed layout there.
+     */
+    static PartPlan resolvePartPlan(ScanUploadContext ctx, long size) {
+        long partSize;
+        int partCount;
+        if (ctx.partCount > 0) {
+            partCount = ctx.partCount;
+            partSize = ctx.partSize > 0 ? ctx.partSize : ceilDiv(size, partCount);
+        } else if (ctx.partSize > 0) {
+            partSize = ctx.partSize;
+            partCount = (int) ceilDiv(size, partSize);
+        } else {
+            partSize = DEFAULT_PART_SIZE_BYTES;
+            partCount = (int) ceilDiv(size, partSize);
+            while (partCount > MAX_PARTS) {
+                partSize *= 2;
+                partCount = (int) ceilDiv(size, partSize);
+            }
+            if (partSize < MIN_PART_SIZE_BYTES) {
+                partSize = MIN_PART_SIZE_BYTES;
+                partCount = (int) ceilDiv(size, partSize);
+            }
+        }
+        return new PartPlan(partSize, partCount);
+    }
+
+    private JSONObject uploadMultipart(File file, ScanUploadContext ctx, PartPlan plan)
             throws FiniteStateApiException, InterruptedException, IOException {
-        JSONArray parts = new JSONArray();
+        JSONObject eTags = new JSONObject();
         long length = file.length();
         try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
-            for (int part = 1; part <= ctx.partCount; part++) {
-                long offset = (long) (part - 1) * ctx.partSize;
-                int len = (int) Math.min(ctx.partSize, length - offset);
+            for (int part = 1; part <= plan.partCount; part++) {
+                long offset = (long) (part - 1) * plan.partSize;
+                int len = (int) Math.min(plan.partSize, length - offset);
                 byte[] buf = new byte[len];
                 raf.seek(offset);
                 raf.readFully(buf);
-                String url = getMultipartPartUrl(ctx.scanContextId, part);
+                String url = getMultipartPartUrl(ctx.scanId, ctx.s3UploadId, part);
                 String etag = putPart(url, buf);
-                JSONObject p = new JSONObject();
-                p.element("partNumber", part);
-                p.element("eTag", etag == null ? "" : etag.replace("\"", ""));
-                parts.add(p);
+                // Keep the ETag verbatim (quotes included): the façade /complete forwards it to S3 for
+                // validation, matching the proven mb-api client. The map is stringified-partNumber → ETag.
+                eTags.element(String.valueOf(part), etag == null ? "" : etag);
             }
         }
-        return parts;
+        return eTags;
     }
 
-    String getMultipartPartUrl(String scanContextId, int partNumber)
+    String getMultipartPartUrl(String scanId, String s3UploadId, int partNumber)
             throws FiniteStateApiException, InterruptedException {
         HttpResponse<String> resp = execGet(
-                apiReq("/scans/" + scanContextId + "/multipart/" + partNumber + "/url")
+                apiReq("/scans/" + enc(scanId) + "/multipart/" + enc(s3UploadId) + "/" + partNumber + "/url")
                         .GET()
                         .build(),
                 "Get multipart part URL");
         return requireText(asObject(parse(resp.body())), "uploadUrl", "Get multipart part URL");
     }
 
-    void completeBinaryUpload(String scanContextId, JSONArray parts)
+    void completeBinaryUpload(String scanId, String s3UploadId, JSONObject eTags)
             throws FiniteStateApiException, InterruptedException {
         JSONObject body = new JSONObject();
-        body.element("parts", parts);
+        body.element("eTags", eTags);
         execPost(
-                apiReq("/scans/" + scanContextId + "/complete")
+                apiReq("/scans/" + enc(scanId) + "/multipart/" + enc(s3UploadId) + "/complete")
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                         .build(),
                 "Complete binary upload");
     }
 
-    List<String> startBinaryScan(String scanContextId) throws FiniteStateApiException, InterruptedException {
+    List<String> startBinaryScan(String scanId) throws FiniteStateApiException, InterruptedException {
         HttpResponse<String> resp = execPost(
-                apiReq("/scans/" + scanContextId + "/start")
+                apiReq("/scans/" + enc(scanId) + "/start")
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.noBody())
                         .build(),
@@ -660,18 +704,29 @@ final class FiniteStateApiClient {
     // ========================================================================
 
     /**
-     * Maps the four binary checkboxes onto the v0 {@code BinaryScanConfig}. Note: {@code binary_sca}
-     * is always enabled server-side, so the SCA checkbox has no field here (see README limitation);
-     * Reachability requires SCA and maps to {@code vulnerabilityAnalysis}. All four fields are sent
-     * explicitly because the API's defaults differ from the plugin's checkbox defaults.
+     * Maps the binary checkboxes onto the mb-api {@code types} tokens accepted by
+     * {@code POST /scans/upload}. Reachability maps to {@code vulnerability_analysis}; the façade
+     * converts these tokens into the server-side scan config. Defaults to {@code sca} if nothing is
+     * selected so a scan is never created with an empty analysis set.
      */
-    static JSONObject buildBinaryScanConfig(FiniteStateScanRequest req) {
-        JSONObject cfg = new JSONObject();
-        cfg.element("configurationAnalysis", req.isConfigEnabled());
-        cfg.element("vulnerabilityAnalysis", req.isReachabilityEnabled() && req.isScaEnabled());
-        cfg.element("binarySast", req.isSastEnabled());
-        cfg.element("pythonSast", false);
-        return cfg;
+    static List<String> buildScanTypes(FiniteStateScanRequest req) {
+        List<String> types = new ArrayList<>();
+        if (req.isScaEnabled()) {
+            types.add("sca");
+        }
+        if (req.isSastEnabled()) {
+            types.add("sast");
+        }
+        if (req.isConfigEnabled()) {
+            types.add("config");
+        }
+        if (req.isReachabilityEnabled()) {
+            types.add("vulnerability_analysis");
+        }
+        if (types.isEmpty()) {
+            types.add("sca");
+        }
+        return types;
     }
 
     /** UI deep link, matching the Azure DevOps extension's pattern. */
@@ -724,20 +779,8 @@ final class FiniteStateApiClient {
     // Internal utilities
     // ========================================================================
 
-    private static String sha256(File file) throws IOException {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            try (InputStream in = new FileInputStream(file)) {
-                byte[] buf = new byte[1 << 20];
-                int r;
-                while ((r = in.read(buf)) > 0) {
-                    md.update(buf, 0, r);
-                }
-            }
-            return HexFormat.of().formatHex(md.digest());
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new IOException("SHA-256 unavailable", e);
-        }
+    private static long ceilDiv(long a, long b) {
+        return (a + b - 1) / b;
     }
 
     private JSON parse(String body) throws FiniteStateApiException {
@@ -819,12 +862,23 @@ final class FiniteStateApiClient {
     // Small value holders
     // ========================================================================
 
-    static final class BinaryContext {
-        String scanContextId;
-        String uploadMethod;
+    static final class ScanUploadContext {
+        String scanId;
+        boolean multipartUpload;
         String uploadUrl;
+        String s3UploadId;
         long partSize;
         int partCount;
+    }
+
+    static final class PartPlan {
+        final long partSize;
+        final int partCount;
+
+        PartPlan(long partSize, int partCount) {
+            this.partSize = partSize;
+            this.partCount = partCount;
+        }
     }
 
     static final class PollOutcome {

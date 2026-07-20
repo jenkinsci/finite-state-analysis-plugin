@@ -5,12 +5,9 @@
 
 ## Introduction
 
-The Finite State Analysis Jenkins Plugin provides multiple post-build actions for integrating with the Finite State platform. Each build step selects a **Platform**:
+The Finite State Analysis Jenkins Plugin provides multiple post-build actions for integrating with the Finite State platform. All build steps call the Finite State public API (v0) directly over HTTPS — no CLT download and no Java required on the agent for the upload transport.
 
-- **Legacy Platform (Java CLT)** — the default. Downloads and runs the Finite State Java CLT on the build agent, exactly as previous plugin versions did (requires Java on the agent). Use this if your organization is still on the legacy platform.
-- **2026 Platform Release (REST API)** — calls the Finite State public API (v0) directly over HTTPS. No CLT download and no Java required on the agent. Use this once your organization has been upgraded to the 2026 platform release.
-
-Jobs saved before the Platform field existed default to **Legacy Platform**, so upgrading the plugin does not change their behavior. Select **2026 Platform Release** to opt into the v0 REST API path.
+Binary uploads use the Finite State upload endpoint (`POST /scans/upload`), a single contract that works against both the current and the previous Finite State backends. This means one plugin version works no matter which backend your instance runs, and a backend migration requires **no job configuration change** — just keep the plugin up to date.
 
 This plugin gives you the ability to add Post Build actions and Pipeline steps for:
 
@@ -23,7 +20,7 @@ This plugin gives you the ability to add Post Build actions and Pipeline steps f
 - **Finite State Analyze Binary**: Upload and analyze binary files (firmware images included — large files use the API's multipart upload automatically)
 - **Finite State Import SBOM**: Import CycloneDX or SPDX SBOM files (format auto-detected)
 - **Finite State Import 3rd Party Scan**: Import third-party scan results
-- Per-step **Platform** selector: Legacy Platform (Java CLT, default) or 2026 Platform Release (public v0 REST API — no CLT download, no Java required on the agent)
+- Single public v0 REST API transport — no CLT download, no Java required on the agent, and works against both the current and previous Finite State backends
 - Secure credential management for API tokens
 - Optionally waits for the scan to complete and sets the build result accordingly
 - Logs the resolved project/version/scan IDs and a direct link to the results in the Finite State UI
@@ -40,7 +37,6 @@ To use this plugin, follow the following steps:
    - `Finite State - Import 3rd Party Scan`
 4. **Generate an API Token**: You need to generate an API token from your Finite State instance. Navigate to your Finite State domain (e.g., if your domain is `fs-yolo.finitestate.io`, go to https://fs-yolo.finitestate.io/settings/api-tokens) and generate a new API token. This token will be used to authenticate with the Finite State platform.
 5. Complete the fields following the below reference. For sensitive fields like `API Token`, we use the credentials plugin, so be sure to create the text credential for this field and select the correct one on the dropdown.
-6. In the **Platform** dropdown, choose **Legacy Platform (Java CLT)** (the default) if your organization is still on the legacy platform, or **2026 Platform Release (REST API)** once your organization has been upgraded to the 2026 platform release. Leaving it at the default keeps existing jobs working unchanged after a plugin upgrade.
 
 ## Post-Build Actions
 
@@ -50,7 +46,6 @@ Uploads binary files to Finite State for comprehensive analysis.
 
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
-| Platform | Which Finite State platform to target: **Legacy Platform (Java CLT)** (default) or **2026 Platform Release (REST API)**. In Pipeline set `platform: 'legacy'` or `platform: '2026'`. | `false` | `dropdown` | `Legacy Platform (Java CLT)` |
 | Subdomain | Your Finite State instance subdomain (e.g., "fs-yolo.dev.fstate.ninja") | `true` | `string` | |
 | API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
 | Binary File Path | Path to the binary file to upload for analysis | `true` | `string` | |
@@ -66,7 +61,6 @@ Imports SBOM (Software Bill of Materials) files to Finite State for analysis.
 
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
-| Platform | Which Finite State platform to target: **Legacy Platform (Java CLT)** (default) or **2026 Platform Release (REST API)**. In Pipeline set `platform: 'legacy'` or `platform: '2026'`. | `false` | `dropdown` | `Legacy Platform (Java CLT)` |
 | Subdomain | Your Finite State instance subdomain | `true` | `string` | |
 | API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
 | SBOM File Path | Path to the SBOM file to import (CycloneDX or SPDX; format auto-detected) | `true` | `string` | |
@@ -81,7 +75,6 @@ Imports third-party scan results to Finite State for analysis.
 
 | parameter | description | required | type | default |
 |-----------|-------------|----------|------|---------|
-| Platform | Which Finite State platform to target: **Legacy Platform (Java CLT)** (default) or **2026 Platform Release (REST API)**. In Pipeline set `platform: 'legacy'` or `platform: '2026'`. | `false` | `dropdown` | `Legacy Platform (Java CLT)` |
 | Subdomain | Your Finite State instance subdomain | `true` | `string` | |
 | API Token Credentials | A Secret Text credentials ID containing your Finite State API token | `true` | `credential` | |
 | Scan File Path | Path to the scan results file | `true` | `string` | |
@@ -105,9 +98,9 @@ The plugin will:
 
 ### How it talks to Finite State
 
-**2026 platform release:** all calls go to your instance's public API at `https://<subdomain>/api/public/v0`, authenticated with the `X-Authorization` header using the API token from the selected credential. The flow per run is: resolve project → resolve/create version → upload + trigger the scan → poll status (optional). No CLT is downloaded and nothing is executed as a subprocess; the upload runs on the build agent so artifact bytes never transit the Jenkins controller.
+All calls go to your instance's public API at `https://<subdomain>/api/public/v0`, authenticated with the `X-Authorization` header using the API token from the selected credential. The flow per run is: resolve project → resolve/create version → upload + trigger the scan → poll status (optional). No CLT is downloaded and nothing is executed as a subprocess; the upload runs on the build agent so artifact bytes never transit the Jenkins controller.
 
-**Legacy platform (default):** the plugin downloads the Java CLT from `https://<subdomain>/api/config/clt` and runs it on the build agent (`java -jar …`), passing credentials via the `FINITE_STATE_AUTH_TOKEN`/`FINITE_STATE_DOMAIN` environment variables — the same behavior as plugin versions ≤ `1.092`.
+Binary uploads use the `POST /scans/upload` endpoint, a single contract served by both the current and the previous Finite State backends (the previous backend serves it natively; the current backend exposes it as a façade over its native binary service). The client adapts automatically to the small difference in multipart behavior between the two, so the same plugin version works against either backend with no configuration change.
 
 Upload mechanics differ by type:
 - **Binary** uploads directly to storage (single PUT, or multipart for large firmware), then starts the scan.
@@ -134,7 +127,6 @@ pipeline {
     stage('Finite State Binary Analysis') {
       steps {
         finiteStateAnalyzeBinary(
-          platform: 'legacy', // 'legacy' = Legacy Platform (Java CLT, default); '2026' = 2026 Platform Release (REST API)
           subdomain: 'fs-your-subdomain.finitestate.io',
           apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
           binaryFilePath: 'build/firmware.bin',
@@ -164,7 +156,6 @@ pipeline {
     stage('Finite State Import SBOM') {
       steps {
         finiteStateImportSbom(
-          platform: 'legacy', // 'legacy' = Legacy Platform (Java CLT, default); '2026' = 2026 Platform Release (REST API)
           subdomain: 'fs-your-subdomain.finitestate.io',
           apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
           sbomFilePath: 'sbom/cyclonedx.json',
@@ -190,7 +181,6 @@ pipeline {
     stage('Finite State Import 3rd Party Scan') {
       steps {
         finiteStateImportThirdParty(
-          platform: 'legacy', // 'legacy' = Legacy Platform (Java CLT, default); '2026' = 2026 Platform Release (REST API)
           subdomain: 'fs-your-subdomain.finitestate.io',
           apiTokenCredentialsId: 'your-jenkins-string-credentials-id',
           scanFilePath: 'reports/sonarqube.json',
@@ -209,8 +199,6 @@ pipeline {
 ```
 
 Notes:
-
-- `platform` selects the transport and defaults to `'legacy'` (Java CLT). Set `platform: '2026'` to use the public v0 REST API. It applies to all three steps, e.g. `finiteStateAnalyzeBinary(platform: '2026', subdomain: '…', apiTokenCredentialsId: '…', …)`.
 
 - Use `apiTokenCredentialsId` (the ID of a Secret Text credential containing your Finite State API token).
 

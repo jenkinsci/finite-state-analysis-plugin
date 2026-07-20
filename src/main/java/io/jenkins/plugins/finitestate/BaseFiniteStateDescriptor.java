@@ -49,19 +49,6 @@ public abstract class BaseFiniteStateDescriptor extends BuildStepDescriptor<Publ
     }
 
     /**
-     * Populate the platform/transport selector. The legacy platform (Java CLT) is listed first and
-     * is the default for jobs that never set the field, keeping existing pipelines working after an
-     * upgrade. See {@link BaseFiniteStateRecorder} and HELIX-422.
-     */
-    @RequirePOST
-    public ListBoxModel doFillPlatformItems() {
-        ListBoxModel items = new ListBoxModel();
-        items.add("Legacy Platform (Java CLT)", BaseFiniteStateRecorder.PLATFORM_LEGACY);
-        items.add("2026 Platform Release (REST API)", BaseFiniteStateRecorder.PLATFORM_2026);
-        return items;
-    }
-
-    /**
      * Common validation helper for required values
      */
     protected FormValidation checkRequiredValue(String value) {
