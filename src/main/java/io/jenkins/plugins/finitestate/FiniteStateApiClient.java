@@ -13,10 +13,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -44,6 +42,15 @@ final class FiniteStateApiClient {
     private static final int MAX_ATTEMPTS = 3; // NFR-2: up to 3 attempts on transient failures
     private static final long POLL_INTERVAL_MS = 10_000L;
 
+    // Multipart threshold + client-side part-layout fallback. The fallback is used ONLY when the
+    // backend omits a server-computed plan (the legacy backend); the current backend's façade returns
+    // partSize/partCount and we honor those. Mirrors the proven mb-api client contract.
+    private static final long MB = 1024L * 1024L;
+    private static final long SINGLE_PUT_MAX_BYTES = 100L * MB; // > 100 MB → request multipart
+    private static final long DEFAULT_PART_SIZE_BYTES = 64L * MB;
+    private static final long MIN_PART_SIZE_BYTES = 5L * MB;
+    private static final int MAX_PARTS = 10_000;
+
     // Terminal scan statuses (ScanStatusEnum in finite-state-api/src/schemas/common.schema.ts).
     private static final Set<String> SUCCESS_TERMINAL =
             Set.of("COMPLETED", "COMPLETED_WITH_WARNINGS", "NOT_APPLICABLE");
@@ -56,8 +63,13 @@ final class FiniteStateApiClient {
     private final HttpClient http;
 
     FiniteStateApiClient(String subdomain, Secret apiToken, TaskListener listener) {
+        this(subdomain, apiToken, listener, "https://" + subdomain + "/api/public/v0");
+    }
+
+    /** Visible for testing: lets a test point the client at a local stub server (e.g. http://…). */
+    FiniteStateApiClient(String subdomain, Secret apiToken, TaskListener listener, String baseUrl) {
         this.subdomain = subdomain;
-        this.baseUrl = "https://" + subdomain + "/api/public/v0";
+        this.baseUrl = baseUrl;
         this.apiToken = apiToken;
         this.listener = listener;
         this.http = HttpClient.newBuilder()
@@ -70,7 +82,12 @@ final class FiniteStateApiClient {
     // Orchestration — one method per analysis type. Populate the ScanResult.
     // ========================================================================
 
-    /** Binary analysis: create context → upload (put/multipart) → start → (optional) poll. */
+    /**
+     * Binary analysis via the mb-api upload façade ({@code POST /scans/upload}). This single path
+     * works against both the legacy backend (which serves the contract natively) and the current
+     * backend (which exposes the same contract as a façade over its native binary service):
+     * create upload context → upload (single PUT or multipart) → start → (optional) poll.
+     */
     void runBinary(File file, FiniteStateScanRequest req, ScanResult result)
             throws FiniteStateApiException, InterruptedException, IOException {
         String projectId = resolveProjectId(req.getProjectName());
@@ -79,24 +96,52 @@ final class FiniteStateApiClient {
         result.setVersionId(versionId);
         result.setUiUrl(buildUiUrl(subdomain, projectId, versionId));
 
-        JSONObject scanConfig = buildBinaryScanConfig(req);
-        String sha256 = sha256(file);
-        BinaryContext ctx = createBinaryScanContext(versionId, file.getName(), file.length(), scanConfig, sha256);
+        // Baseline of scans already on the version, so that when we later resolve this submission's
+        // scan id(s) from the version (previous backend), we report only the NEW ones — not siblings
+        // from earlier tasks that share the same version (externalized-ID builds run all 3 tasks
+        // against one version).
+        List<String> priorScanIds = resolveScanIdsForVersion(versionId);
 
-        if ("multipart".equals(ctx.uploadMethod)) {
-            log("Uploading binary via multipart (" + ctx.partCount + " parts)...");
-            JSONArray parts = uploadMultipart(file, ctx);
-            completeBinaryUpload(ctx.scanContextId, parts);
+        long size = file.length();
+        List<String> types = buildScanTypes(req);
+        boolean wantMultipart = size > SINGLE_PUT_MAX_BYTES;
+        ScanUploadContext ctx = createScanUpload(versionId, file.getName(), types, wantMultipart, size);
+
+        // Branch on what the server actually created (ctx.multipartUpload), not just what we asked for.
+        // Validate the follow-up field is present up front so a malformed create response fails here
+        // with a clear message instead of deep in the part-URL / PUT calls (mirrors the mb-api client).
+        if (ctx.multipartUpload) {
+            if (ctx.s3UploadId == null || ctx.s3UploadId.isBlank()) {
+                throw new FiniteStateApiException(0, "Create scan upload returned multipart without an s3UploadId.");
+            }
+            PartPlan plan = resolvePartPlan(ctx, size);
+            log("Uploading binary via multipart (" + plan.partCount + " parts)...");
+            JSONObject eTags = uploadMultipart(file, ctx, plan);
+            completeBinaryUpload(ctx.scanId, ctx.s3UploadId, eTags);
         } else {
+            if (ctx.uploadUrl == null || ctx.uploadUrl.isBlank()) {
+                throw new FiniteStateApiException(0, "Create scan upload returned single-PUT without an uploadUrl.");
+            }
             log("Uploading binary...");
             putFile(ctx.uploadUrl, file, "application/octet-stream");
         }
 
-        List<String> scanIds = startBinaryScan(ctx.scanContextId);
+        List<String> scanIds = startBinaryScan(ctx.scanId);
+        if (scanIds.isEmpty()) {
+            // Backend difference: the current backend's /start spawns and returns the scan(s)
+            // (e.g. binary_sca + vulnerability_analysis); the previous backend's /start triggers
+            // processing and returns none — and there /scans/upload's scanId is an upload-context id,
+            // not a pollable scan. Resolve the real scan id(s) from the version so status polling
+            // works; keep the context id only as a last resort so we still report something.
+            scanIds = newScanIdsSince(versionId, priorScanIds);
+            if (scanIds.isEmpty()) {
+                scanIds = List.of(ctx.scanId);
+            }
+        }
         scanIds.forEach(result::addScanId);
         log("Started " + scanIds.size() + " scan(s) for binary analysis.");
 
-        finishWithPolling(req, scanIds, result);
+        finishWithPolling(req, scanIds, versionId, result);
     }
 
     /** SBOM import: resolve project/version → server-side single-shot upload (auto-detected CycloneDX/SPDX) → poll. */
@@ -108,6 +153,7 @@ final class FiniteStateApiClient {
         result.setVersionId(versionId);
         result.setUiUrl(buildUiUrl(subdomain, projectId, versionId));
 
+        List<String> priorScanIds = resolveScanIdsForVersion(versionId);
         String format = detectSbomFormat(file);
         log("Detected SBOM format: " + format);
         // Server-side single-shot upload (the file goes to the API, which uploads to storage and
@@ -115,11 +161,14 @@ final class FiniteStateApiClient {
         String query = "projectVersionId=" + enc(versionId)
                 + "&type=" + ("spdx".equals(format) ? "spdx" : "cdx")
                 + "&filename=" + enc(file.getName());
+        // The current backend returns {scanId}; the previous backend returns 204 with no id, so
+        // resolve the id of the scan we just created (new since the baseline) — enables polling on both.
         String scanId = ingestSingleShot("/scans/sbom", query, file, "Upload SBOM");
-        result.addScanId(scanId);
-        log("SBOM import submitted (scan " + scanId + ").");
+        List<String> scanIds = scanId != null ? List.of(scanId) : newScanIdsSince(versionId, priorScanIds);
+        scanIds.forEach(result::addScanId);
+        log("SBOM import submitted" + (scanIds.isEmpty() ? "." : " (scan " + String.join(", ", scanIds) + ")."));
 
-        finishWithPolling(req, List.of(scanId), result);
+        finishWithPolling(req, scanIds, versionId, result);
     }
 
     /** Third-party scan import: resolve project/version → server-side single-shot upload (scanner = scanType) → poll. */
@@ -131,31 +180,43 @@ final class FiniteStateApiClient {
         result.setVersionId(versionId);
         result.setUiUrl(buildUiUrl(subdomain, projectId, versionId));
 
+        List<String> priorScanIds = resolveScanIdsForVersion(versionId);
         // Server-side single-shot upload (see runSbom) — the API uploads the file and triggers
         // third-party processing in one call, so scanner output never transits a client->storage PUT.
         String query = "projectVersionId=" + enc(versionId)
                 + "&type=" + enc(req.getScanType())
                 + "&filename=" + enc(file.getName());
         String scanId = ingestSingleShot("/scans/third-party", query, file, "Upload third-party scan");
-        result.addScanId(scanId);
-        log("Third-party scan submitted (scan " + scanId + ", scanner " + req.getScanType() + ").");
+        // As with SBOM: {scanId} on the current backend, 204 on the previous → resolve the new scan.
+        List<String> scanIds = scanId != null ? List.of(scanId) : newScanIdsSince(versionId, priorScanIds);
+        scanIds.forEach(result::addScanId);
+        log("Third-party scan submitted" + (scanIds.isEmpty() ? "" : " (scan " + String.join(", ", scanIds) + ")")
+                + " (scanner " + req.getScanType() + ").");
 
-        finishWithPolling(req, List.of(scanId), result);
+        finishWithPolling(req, scanIds, versionId, result);
     }
 
     /**
      * FR-7: when waitForCompletion is set, poll to a terminal state (or timeout) and set the build
      * outcome from the scan status; otherwise return success once processing is accepted.
      */
-    private void finishWithPolling(FiniteStateScanRequest req, List<String> scanIds, ScanResult result)
+    private void finishWithPolling(
+            FiniteStateScanRequest req, List<String> scanIds, String versionId, ScanResult result)
             throws InterruptedException, FiniteStateApiException {
         if (!req.isWaitForCompletion()) {
             result.setFinalStatus("SUBMITTED");
             result.setSuccess(true);
             return;
         }
+        if (scanIds.isEmpty()) {
+            // Nothing pollable was resolved — don't claim a terminal outcome; report submitted.
+            log("NOTE: no scan id was available to poll; the scan was submitted and continues in the Finite State UI.");
+            result.setFinalStatus("SUBMITTED");
+            result.setSuccess(true);
+            return;
+        }
         log("Waiting for completion (timeout " + req.getPollTimeoutMinutes() + " min)...");
-        PollOutcome outcome = pollUntilTerminal(scanIds, req.getPollTimeoutMinutes());
+        PollOutcome outcome = pollUntilTerminal(scanIds, versionId, req.getPollTimeoutMinutes());
         result.setFinalStatus(outcome.status);
         result.setSuccess(outcome.success);
     }
@@ -250,83 +311,112 @@ final class FiniteStateApiClient {
     // Binary scan endpoints
     // ========================================================================
 
-    BinaryContext createBinaryScanContext(
-            String versionId, String filename, long size, JSONObject scanConfig, String sha256)
+    ScanUploadContext createScanUpload(
+            String versionId, String filename, List<String> types, boolean multipartUpload, long size)
             throws FiniteStateApiException, InterruptedException {
         JSONObject body = new JSONObject();
-        body.element("projectVersionId", versionId);
         body.element("filename", filename);
+        JSONArray typesArr = new JSONArray();
+        for (String t : types) {
+            typesArr.add(t);
+        }
+        body.element("types", typesArr);
+        body.element("multipartUpload", multipartUpload);
         body.element("fileSizeBytes", size);
-        body.element("contentType", "application/octet-stream");
-        if (scanConfig != null) {
-            body.element("scanConfig", scanConfig);
-        }
-        if (sha256 != null) {
-            body.element("sha256", sha256);
-        }
         HttpResponse<String> resp = execPost(
-                apiReq("/scans/binary")
+                apiReq("/scans/upload?projectVersionId=" + enc(versionId))
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                         .build(),
-                "Create binary scan context");
+                "Create scan upload");
         JSONObject n = asObject(parse(resp.body()));
-        BinaryContext ctx = new BinaryContext();
-        ctx.scanContextId = requireText(n, "scanContextId", "Create binary scan context");
-        ctx.uploadMethod = optString(n, "uploadMethod", "put");
+        ScanUploadContext ctx = new ScanUploadContext();
+        ctx.scanId = requireText(n, "scanId", "Create scan upload");
+        ctx.multipartUpload = n.optBoolean("multipartUpload", false);
         ctx.uploadUrl = optString(n, "uploadUrl", null);
+        ctx.s3UploadId = optString(n, "s3UploadId", null);
         ctx.partSize = n.optLong("partSize", 0);
         ctx.partCount = n.optInt("partCount", 0);
         return ctx;
     }
 
-    private JSONArray uploadMultipart(File file, BinaryContext ctx)
+    /**
+     * Determine the multipart part layout. The current backend's façade returns a server-computed
+     * plan (partSize/partCount derived from fileSizeBytes) and its {@code /complete} rejects any other
+     * count ("Expected N parts, received M"), so honor the server's plan whenever EITHER field is
+     * present — {@code partCount} is what {@code /complete} validates, so it wins. The legacy backend
+     * omits both fields, so we fall back to a client-computed layout there.
+     */
+    static PartPlan resolvePartPlan(ScanUploadContext ctx, long size) {
+        long partSize;
+        int partCount;
+        if (ctx.partCount > 0) {
+            partCount = ctx.partCount;
+            partSize = ctx.partSize > 0 ? ctx.partSize : ceilDiv(size, partCount);
+        } else if (ctx.partSize > 0) {
+            partSize = ctx.partSize;
+            partCount = (int) ceilDiv(size, partSize);
+        } else {
+            partSize = DEFAULT_PART_SIZE_BYTES;
+            partCount = (int) ceilDiv(size, partSize);
+            while (partCount > MAX_PARTS) {
+                partSize *= 2;
+                partCount = (int) ceilDiv(size, partSize);
+            }
+            if (partSize < MIN_PART_SIZE_BYTES) {
+                partSize = MIN_PART_SIZE_BYTES;
+                partCount = (int) ceilDiv(size, partSize);
+            }
+        }
+        return new PartPlan(partSize, partCount);
+    }
+
+    private JSONObject uploadMultipart(File file, ScanUploadContext ctx, PartPlan plan)
             throws FiniteStateApiException, InterruptedException, IOException {
-        JSONArray parts = new JSONArray();
+        JSONObject eTags = new JSONObject();
         long length = file.length();
         try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
-            for (int part = 1; part <= ctx.partCount; part++) {
-                long offset = (long) (part - 1) * ctx.partSize;
-                int len = (int) Math.min(ctx.partSize, length - offset);
+            for (int part = 1; part <= plan.partCount; part++) {
+                long offset = (long) (part - 1) * plan.partSize;
+                int len = (int) Math.min(plan.partSize, length - offset);
                 byte[] buf = new byte[len];
                 raf.seek(offset);
                 raf.readFully(buf);
-                String url = getMultipartPartUrl(ctx.scanContextId, part);
+                String url = getMultipartPartUrl(ctx.scanId, ctx.s3UploadId, part);
                 String etag = putPart(url, buf);
-                JSONObject p = new JSONObject();
-                p.element("partNumber", part);
-                p.element("eTag", etag == null ? "" : etag.replace("\"", ""));
-                parts.add(p);
+                // Keep the ETag verbatim (quotes included): the façade /complete forwards it to S3 for
+                // validation, matching the proven mb-api client. The map is stringified-partNumber → ETag.
+                eTags.element(String.valueOf(part), etag == null ? "" : etag);
             }
         }
-        return parts;
+        return eTags;
     }
 
-    String getMultipartPartUrl(String scanContextId, int partNumber)
+    String getMultipartPartUrl(String scanId, String s3UploadId, int partNumber)
             throws FiniteStateApiException, InterruptedException {
         HttpResponse<String> resp = execGet(
-                apiReq("/scans/" + scanContextId + "/multipart/" + partNumber + "/url")
+                apiReq("/scans/" + enc(scanId) + "/multipart/" + enc(s3UploadId) + "/" + partNumber + "/url")
                         .GET()
                         .build(),
                 "Get multipart part URL");
         return requireText(asObject(parse(resp.body())), "uploadUrl", "Get multipart part URL");
     }
 
-    void completeBinaryUpload(String scanContextId, JSONArray parts)
+    void completeBinaryUpload(String scanId, String s3UploadId, JSONObject eTags)
             throws FiniteStateApiException, InterruptedException {
         JSONObject body = new JSONObject();
-        body.element("parts", parts);
+        body.element("eTags", eTags);
         execPost(
-                apiReq("/scans/" + scanContextId + "/complete")
+                apiReq("/scans/" + enc(scanId) + "/multipart/" + enc(s3UploadId) + "/complete")
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                         .build(),
                 "Complete binary upload");
     }
 
-    List<String> startBinaryScan(String scanContextId) throws FiniteStateApiException, InterruptedException {
+    List<String> startBinaryScan(String scanId) throws FiniteStateApiException, InterruptedException {
         HttpResponse<String> resp = execPost(
-                apiReq("/scans/" + scanContextId + "/start")
+                apiReq("/scans/" + enc(scanId) + "/start")
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.noBody())
                         .build(),
@@ -345,14 +435,100 @@ final class FiniteStateApiClient {
         return ids;
     }
 
+    /**
+     * Resolve the real scan id(s) attached to a version. Used when a submit path doesn't hand back an
+     * id: the previous backend's binary {@code /start} returns no scans (its {@code /scans/upload}
+     * scanId is an upload-context id, not a pollable scan), and its single-shot SBOM/third-party
+     * return 204 with no id. Best-effort — on any API error, return empty so submission still reports
+     * success (only status polling is affected). The current backend never needs this (its /start
+     * returns the scans and its single-shot returns a scanId).
+     */
+    private List<String> resolveScanIdsForVersion(String versionId) throws InterruptedException {
+        try {
+            // A version holds only a handful of scans (one binary spawns a few, plus SBOM/third-party),
+            // so a single 100-row page always covers it — no pagination needed for per-version scoping.
+            // limit is capped at 100: the previous backend (Alloy) rejects limit>100 with sqlstate 400
+            // ("maximum: 100"), which would break scan-id resolution + status polling on that backend.
+            HttpResponse<String> resp = execGet(
+                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=100")
+                            .GET()
+                            .build(),
+                    "List version scans");
+            JSONArray arr = itemsArray(parse(resp.body()));
+            List<String> ids = new ArrayList<>();
+            if (arr != null) {
+                for (int i = 0; i < arr.size(); i++) {
+                    if (arr.get(i) instanceof JSONObject) {
+                        String id = optString(arr.getJSONObject(i), "id", null);
+                        if (id != null) {
+                            ids.add(id);
+                        }
+                    }
+                }
+            }
+            return ids;
+        } catch (FiniteStateApiException e) {
+            log("WARNING: could not resolve scan id(s) for the version (" + e.getMessage()
+                    + "); status polling may be unavailable for this submission.");
+            return List.of();
+        }
+    }
+
+    /** Extract the array from a list response, whether it's a bare array or wrapped in items/data. */
+    private static JSONArray itemsArray(JSON parsed) {
+        if (parsed instanceof JSONArray) {
+            return (JSONArray) parsed;
+        }
+        if (parsed instanceof JSONObject) {
+            JSONObject obj = (JSONObject) parsed;
+            if (obj.has("items") && obj.get("items") instanceof JSONArray) {
+                return obj.getJSONArray("items");
+            }
+            if (obj.has("data") && obj.get("data") instanceof JSONArray) {
+                return obj.getJSONArray("data");
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Scan id(s) on the version that are NOT in {@code prior} — i.e. the ones this submission just
+     * created. Isolates a task's own scan(s) from siblings when multiple tasks share one version
+     * (externalized-ID builds). Retries briefly because the previous backend may not index a
+     * just-created scan instantly — so we report the real, pollable id(s) rather than falling back to
+     * the (unpollable) upload-context id. Returns them in listing order.
+     */
+    private List<String> newScanIdsSince(String versionId, List<String> prior) throws InterruptedException {
+        List<String> fresh = new ArrayList<>();
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            fresh = new ArrayList<>();
+            for (String id : resolveScanIdsForVersion(versionId)) {
+                if (!prior.contains(id)) {
+                    fresh.add(id);
+                }
+            }
+            if (!fresh.isEmpty() || attempt == 3) {
+                break;
+            }
+            Thread.sleep(1500L);
+        }
+        return fresh;
+    }
+
     // ========================================================================
     // SBOM / third-party single-shot upload
     // ========================================================================
 
     /**
      * POST the file bytes (octet-stream) to the API, which uploads to storage server-side and
-     * triggers processing in one call. Returns the created scan ID. Used for SBOM and third-party
-     * scans so scanner content never transits a client->storage PUT (which a WAF can block).
+     * triggers processing in one call. Used for SBOM and third-party scans so scanner content never
+     * transits a client->storage PUT (which a WAF can block).
+     *
+     * <p>Returns the created scan ID when the backend includes one — the current backend returns
+     * {@code {scanId}}; the previous backend accepts the upload with a 2xx and no scan id in the body
+     * (it may reply 204). A missing id is NOT an error: {@code execPost} already enforced a 2xx, so
+     * the submission succeeded — we just return {@code null} and the caller reports "submitted"
+     * without an id.
      *
      * <p>Limitation: the whole file travels in the request body, so this path is bounded by the
      * API's request-body limit (a few MB). Larger SBOM/third-party files are not supported here.
@@ -366,23 +542,43 @@ final class FiniteStateApiClient {
                         .POST(fileBody(file))
                         .build(),
                 context);
-        return requireText(asObject(parse(resp.body())), "scanId", context);
+        JSONObject n = asObject(parse(resp.body()));
+        // Accept scanId (current backend) or id (previous backend), else none.
+        return optString(n, "scanId", optString(n, "id", null));
     }
 
     // ========================================================================
     // Status polling (FR-7)
     // ========================================================================
 
-    PollOutcome pollUntilTerminal(List<String> scanIds, int timeoutMinutes)
+    PollOutcome pollUntilTerminal(List<String> scanIds, String versionId, int timeoutMinutes)
             throws FiniteStateApiException, InterruptedException {
         long deadline = System.currentTimeMillis() + (long) timeoutMinutes * 60_000L;
         while (true) {
+            // Per-iteration, lazily-fetched previous-backend fallback: {scanId -> status} from the
+            // version's scan list (that backend has no per-scan /status endpoint but reports status here).
+            java.util.Map<String, String> versionStatuses = null;
             boolean allTerminal = true;
             boolean anyFailure = false;
             String lastStatus = "UNKNOWN";
             for (String scanId : scanIds) {
-                JSONObject s = getScanStatus(scanId);
-                String status = optString(s, "status", "UNKNOWN");
+                String status = null;
+                JSONObject s = getScanStatus(scanId); // current backend: GET /scans/{id}/status
+                if (s != null) {
+                    status = optString(s, "status", null);
+                } else {
+                    if (versionStatuses == null) {
+                        versionStatuses = getVersionScanStatuses(versionId);
+                    }
+                    status = versionStatuses.get(scanId);
+                }
+                if (status == null || status.isBlank()) {
+                    // Can't confirm status yet → treat as non-terminal and keep waiting. We never
+                    // report a green "completed" without actually reading a terminal status, so
+                    // waitForCompletion can't silently pass while a scan is still running.
+                    allTerminal = false;
+                    continue;
+                }
                 lastStatus = status;
                 if (FAILURE_TERMINAL.contains(status)) {
                     anyFailure = true;
@@ -403,10 +599,56 @@ final class FiniteStateApiClient {
         }
     }
 
+    /**
+     * {@code scanId -> status} for every scan on a version, from the scan-list endpoint. Used as the
+     * status source on the previous backend, which has no per-scan {@code /status} endpoint but does
+     * report {@code status} in the list. Best-effort — returns an empty map on API error (the poller
+     * then keeps waiting rather than reporting a false result).
+     */
+    private java.util.Map<String, String> getVersionScanStatuses(String versionId) throws InterruptedException {
+        java.util.Map<String, String> map = new java.util.HashMap<>();
+        try {
+            HttpResponse<String> resp = execGet(
+                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=100")
+                            .GET()
+                            .build(),
+                    "List version scan statuses");
+            JSONArray arr = itemsArray(parse(resp.body()));
+            if (arr != null) {
+                for (int i = 0; i < arr.size(); i++) {
+                    if (arr.get(i) instanceof JSONObject) {
+                        JSONObject o = arr.getJSONObject(i);
+                        String id = optString(o, "id", null);
+                        String st = optString(o, "status", null);
+                        if (id != null && st != null) {
+                            map.put(id, st);
+                        }
+                    }
+                }
+            }
+        } catch (FiniteStateApiException e) {
+            log("WARNING: could not read scan statuses for the version (" + e.getMessage() + "); will retry.");
+        }
+        return map;
+    }
+
+    /**
+     * Fetch a scan's status via {@code GET /scans/{id}/status}. Returns {@code null} on 404 — the
+     * previous backend has no per-scan status endpoint (it surfaces status only in the scan list), so
+     * a {@code null} tells the poller to fall back to {@link #getVersionScanStatuses} rather than treat
+     * the missing endpoint as a failure.
+     */
     JSONObject getScanStatus(String scanId) throws FiniteStateApiException, InterruptedException {
-        HttpResponse<String> resp =
-                execGet(apiReq("/scans/" + scanId + "/status").GET().build(), "Get scan status");
-        return asObject(parse(resp.body()));
+        try {
+            HttpResponse<String> resp =
+                    execGet(apiReq("/scans/" + enc(scanId) + "/status").GET().build(), "Get scan status");
+            return asObject(parse(resp.body()));
+        } catch (FiniteStateApiException e) {
+            if (e.getStatusCode() == 404) {
+                return null;
+            }
+            throw e;
+        }
     }
 
     // ========================================================================
@@ -660,18 +902,31 @@ final class FiniteStateApiClient {
     // ========================================================================
 
     /**
-     * Maps the four binary checkboxes onto the v0 {@code BinaryScanConfig}. Note: {@code binary_sca}
-     * is always enabled server-side, so the SCA checkbox has no field here (see README limitation);
-     * Reachability requires SCA and maps to {@code vulnerabilityAnalysis}. All four fields are sent
-     * explicitly because the API's defaults differ from the plugin's checkbox defaults.
+     * Maps the binary checkboxes onto the mb-api {@code types} tokens accepted by
+     * {@code POST /scans/upload}. Reachability maps to {@code vulnerability_analysis}; the façade
+     * converts these tokens into the server-side scan config. Defaults to {@code sca} if nothing is
+     * selected so a scan is never created with an empty analysis set.
      */
-    static JSONObject buildBinaryScanConfig(FiniteStateScanRequest req) {
-        JSONObject cfg = new JSONObject();
-        cfg.element("configurationAnalysis", req.isConfigEnabled());
-        cfg.element("vulnerabilityAnalysis", req.isReachabilityEnabled() && req.isScaEnabled());
-        cfg.element("binarySast", req.isSastEnabled());
-        cfg.element("pythonSast", false);
-        return cfg;
+    static List<String> buildScanTypes(FiniteStateScanRequest req) {
+        List<String> types = new ArrayList<>();
+        if (req.isScaEnabled()) {
+            types.add("sca");
+        }
+        if (req.isSastEnabled()) {
+            types.add("sast");
+        }
+        if (req.isConfigEnabled()) {
+            types.add("config");
+        }
+        // Reachability maps to vulnerability_analysis and — matching the prior BinaryScanConfig
+        // behavior and the UI coupling — only applies when Binary SCA is also enabled.
+        if (req.isReachabilityEnabled() && req.isScaEnabled()) {
+            types.add("vulnerability_analysis");
+        }
+        if (types.isEmpty()) {
+            types.add("sca");
+        }
+        return types;
     }
 
     /** UI deep link, matching the Azure DevOps extension's pattern. */
@@ -724,20 +979,8 @@ final class FiniteStateApiClient {
     // Internal utilities
     // ========================================================================
 
-    private static String sha256(File file) throws IOException {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            try (InputStream in = new FileInputStream(file)) {
-                byte[] buf = new byte[1 << 20];
-                int r;
-                while ((r = in.read(buf)) > 0) {
-                    md.update(buf, 0, r);
-                }
-            }
-            return HexFormat.of().formatHex(md.digest());
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new IOException("SHA-256 unavailable", e);
-        }
+    private static long ceilDiv(long a, long b) {
+        return (a + b - 1) / b;
     }
 
     private JSON parse(String body) throws FiniteStateApiException {
@@ -819,12 +1062,23 @@ final class FiniteStateApiClient {
     // Small value holders
     // ========================================================================
 
-    static final class BinaryContext {
-        String scanContextId;
-        String uploadMethod;
+    static final class ScanUploadContext {
+        String scanId;
+        boolean multipartUpload;
         String uploadUrl;
+        String s3UploadId;
         long partSize;
         int partCount;
+    }
+
+    static final class PartPlan {
+        final long partSize;
+        final int partCount;
+
+        PartPlan(long partSize, int partCount) {
+            this.partSize = partSize;
+            this.partCount = partCount;
+        }
     }
 
     static final class PollOutcome {

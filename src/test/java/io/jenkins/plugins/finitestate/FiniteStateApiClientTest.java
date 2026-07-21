@@ -55,6 +55,36 @@ public class FiniteStateApiClientTest {
     }
 
     @Test
+    public void partPlanHonorsServerPartCount() {
+        // Current backend (façade) returns a server-computed plan; partCount is authoritative.
+        FiniteStateApiClient.ScanUploadContext ctx = new FiniteStateApiClient.ScanUploadContext();
+        ctx.partCount = 4;
+        ctx.partSize = 25L * 1024 * 1024;
+        FiniteStateApiClient.PartPlan plan = FiniteStateApiClient.resolvePartPlan(ctx, 100L * 1024 * 1024);
+        assertEquals(4, plan.partCount);
+        assertEquals(25L * 1024 * 1024, plan.partSize);
+    }
+
+    @Test
+    public void partPlanDerivesCountFromServerPartSize() {
+        // Server returns only partSize → derive the count from the file size.
+        FiniteStateApiClient.ScanUploadContext ctx = new FiniteStateApiClient.ScanUploadContext();
+        ctx.partSize = 10L * 1024 * 1024;
+        FiniteStateApiClient.PartPlan plan = FiniteStateApiClient.resolvePartPlan(ctx, 25L * 1024 * 1024);
+        assertEquals(10L * 1024 * 1024, plan.partSize);
+        assertEquals(3, plan.partCount); // ceil(25/10)
+    }
+
+    @Test
+    public void partPlanFallsBackToClientLayoutWhenServerOmitsPlan() {
+        // Legacy backend omits partSize/partCount → the client computes its own layout.
+        FiniteStateApiClient.ScanUploadContext ctx = new FiniteStateApiClient.ScanUploadContext();
+        FiniteStateApiClient.PartPlan plan = FiniteStateApiClient.resolvePartPlan(ctx, 200L * 1024 * 1024);
+        assertEquals(64L * 1024 * 1024, plan.partSize); // DEFAULT_PART_SIZE_BYTES
+        assertEquals(4, plan.partCount); // ceil(200/64)
+    }
+
+    @Test
     public void detectSbomFormatByContent() throws Exception {
         File spdxByContent = tmp.newFile("bom.json");
         Files.writeString(

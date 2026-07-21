@@ -1,14 +1,9 @@
 package io.jenkins.plugins.finitestate;
 
 import hudson.Extension;
-import hudson.FilePath;
-import hudson.Launcher;
-import hudson.model.TaskListener;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import javax.servlet.ServletException;
 import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundConstructor;
@@ -58,30 +53,6 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
     }
 
     @Override
-    protected int executeAnalysis(
-            FilePath cltPath,
-            FilePath filePath,
-            String projectName,
-            String projectVersion,
-            String apiToken,
-            FilePath workspace,
-            Launcher launcher,
-            TaskListener listener)
-            throws IOException, InterruptedException {
-        return executeThirdPartyImport(
-                cltPath,
-                filePath,
-                projectName,
-                projectVersion,
-                scanType,
-                getPreRelease(),
-                apiToken,
-                workspace,
-                launcher,
-                listener);
-    }
-
-    @Override
     protected String getAnalysisType() {
         return "Third Party Import";
     }
@@ -94,47 +65,6 @@ public class FiniteStateThirdPartyImportRecorder extends BaseFiniteStateRecorder
     @Override
     protected String getFilePathValue() {
         return scanFilePath;
-    }
-
-    /**
-     * Execute the third party import command (legacy platform transport).
-     */
-    private int executeThirdPartyImport(
-            FilePath cltPath,
-            FilePath scanFile,
-            String projectName,
-            String projectVersion,
-            String scanType,
-            boolean preRelease,
-            String apiToken,
-            FilePath workspace,
-            Launcher launcher,
-            TaskListener listener)
-            throws IOException, InterruptedException {
-
-        List<String> command = new ArrayList<>();
-        command.add("java");
-        command.add("-jar");
-        command.add(cltPath.getRemote());
-        command.add("--thirdParty=" + scanType);
-        command.add("--name=" + projectName);
-        command.add("--version=" + projectVersion);
-        command.add(scanFile.getRemote());
-
-        if (preRelease) {
-            command.add("--pre-release");
-        }
-
-        listener.getLogger().println("Executing command: " + String.join(" ", command));
-
-        Launcher.ProcStarter starter = launcher.launch();
-        starter.cmds(command);
-        starter.envs(buildCLTEnvironment(apiToken));
-        starter.stdout(listener.getLogger());
-        starter.stderr(listener.getLogger());
-        starter.pwd(workspace);
-
-        return starter.join();
     }
 
     @Symbol("finiteStateImportThirdParty")
