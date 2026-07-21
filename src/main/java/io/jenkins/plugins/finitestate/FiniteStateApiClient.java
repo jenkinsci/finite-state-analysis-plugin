@@ -108,6 +108,13 @@ final class FiniteStateApiClient {
         }
 
         List<String> scanIds = startBinaryScan(ctx.scanId);
+        if (scanIds.isEmpty()) {
+            // Backend difference: the current backend's /start spawns and returns the scan(s)
+            // (e.g. binary_sca + vulnerability_analysis); the previous backend's /start just triggers
+            // processing and returns none — there the upload context id IS the scan handle. Fall back
+            // to it so we always report a usable id (and can poll it) on both backends.
+            scanIds = List.of(ctx.scanId);
+        }
         scanIds.forEach(result::addScanId);
         log("Started " + scanIds.size() + " scan(s) for binary analysis.");
 
@@ -131,10 +138,11 @@ final class FiniteStateApiClient {
                 + "&type=" + ("spdx".equals(format) ? "spdx" : "cdx")
                 + "&filename=" + enc(file.getName());
         String scanId = ingestSingleShot("/scans/sbom", query, file, "Upload SBOM");
-        result.addScanId(scanId);
-        log("SBOM import submitted (scan " + scanId + ").");
+        List<String> scanIds = scanId != null ? List.of(scanId) : List.of();
+        scanIds.forEach(result::addScanId);
+        log("SBOM import submitted" + (scanId != null ? " (scan " + scanId + ")." : "."));
 
-        finishWithPolling(req, List.of(scanId), result);
+        finishWithPolling(req, scanIds, result);
     }
 
     /** Third-party scan import: resolve project/version → server-side single-shot upload (scanner = scanType) → poll. */
@@ -152,10 +160,12 @@ final class FiniteStateApiClient {
                 + "&type=" + enc(req.getScanType())
                 + "&filename=" + enc(file.getName());
         String scanId = ingestSingleShot("/scans/third-party", query, file, "Upload third-party scan");
-        result.addScanId(scanId);
-        log("Third-party scan submitted (scan " + scanId + ", scanner " + req.getScanType() + ").");
+        List<String> scanIds = scanId != null ? List.of(scanId) : List.of();
+        scanIds.forEach(result::addScanId);
+        log("Third-party scan submitted" + (scanId != null ? " (scan " + scanId + ")" : "") + " (scanner "
+                + req.getScanType() + ").");
 
-        finishWithPolling(req, List.of(scanId), result);
+        finishWithPolling(req, scanIds, result);
     }
 
     /**
@@ -395,8 +405,14 @@ final class FiniteStateApiClient {
 
     /**
      * POST the file bytes (octet-stream) to the API, which uploads to storage server-side and
-     * triggers processing in one call. Returns the created scan ID. Used for SBOM and third-party
-     * scans so scanner content never transits a client->storage PUT (which a WAF can block).
+     * triggers processing in one call. Used for SBOM and third-party scans so scanner content never
+     * transits a client->storage PUT (which a WAF can block).
+     *
+     * <p>Returns the created scan ID when the backend includes one — the current backend returns
+     * {@code {scanId}}; the previous backend accepts the upload with a 2xx and no scan id in the body
+     * (it may reply 204). A missing id is NOT an error: {@code execPost} already enforced a 2xx, so
+     * the submission succeeded — we just return {@code null} and the caller reports "submitted"
+     * without an id.
      *
      * <p>Limitation: the whole file travels in the request body, so this path is bounded by the
      * API's request-body limit (a few MB). Larger SBOM/third-party files are not supported here.
@@ -410,7 +426,9 @@ final class FiniteStateApiClient {
                         .POST(fileBody(file))
                         .build(),
                 context);
-        return requireText(asObject(parse(resp.body())), "scanId", context);
+        JSONObject n = asObject(parse(resp.body()));
+        // Accept scanId (current backend) or id (previous backend), else none.
+        return optString(n, "scanId", optString(n, "id", null));
     }
 
     // ========================================================================
