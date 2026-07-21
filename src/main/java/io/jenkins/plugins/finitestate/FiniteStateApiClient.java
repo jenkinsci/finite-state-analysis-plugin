@@ -110,10 +110,14 @@ final class FiniteStateApiClient {
         List<String> scanIds = startBinaryScan(ctx.scanId);
         if (scanIds.isEmpty()) {
             // Backend difference: the current backend's /start spawns and returns the scan(s)
-            // (e.g. binary_sca + vulnerability_analysis); the previous backend's /start just triggers
-            // processing and returns none — there the upload context id IS the scan handle. Fall back
-            // to it so we always report a usable id (and can poll it) on both backends.
-            scanIds = List.of(ctx.scanId);
+            // (e.g. binary_sca + vulnerability_analysis); the previous backend's /start triggers
+            // processing and returns none — and there /scans/upload's scanId is an upload-context id,
+            // not a pollable scan. Resolve the real scan id(s) from the version so status polling
+            // works; keep the context id only as a last resort so we still report something.
+            scanIds = resolveScanIdsForVersion(versionId);
+            if (scanIds.isEmpty()) {
+                scanIds = List.of(ctx.scanId);
+            }
         }
         scanIds.forEach(result::addScanId);
         log("Started " + scanIds.size() + " scan(s) for binary analysis.");
@@ -137,10 +141,12 @@ final class FiniteStateApiClient {
         String query = "projectVersionId=" + enc(versionId)
                 + "&type=" + ("spdx".equals(format) ? "spdx" : "cdx")
                 + "&filename=" + enc(file.getName());
+        // The current backend returns {scanId}; the previous backend returns 204 with no id, so
+        // resolve the real scan id from the version there (enables status polling on both).
         String scanId = ingestSingleShot("/scans/sbom", query, file, "Upload SBOM");
-        List<String> scanIds = scanId != null ? List.of(scanId) : List.of();
+        List<String> scanIds = scanId != null ? List.of(scanId) : resolveScanIdsForVersion(versionId);
         scanIds.forEach(result::addScanId);
-        log("SBOM import submitted" + (scanId != null ? " (scan " + scanId + ")." : "."));
+        log("SBOM import submitted" + (scanIds.isEmpty() ? "." : " (scan " + String.join(", ", scanIds) + ")."));
 
         finishWithPolling(req, scanIds, result);
     }
@@ -160,10 +166,11 @@ final class FiniteStateApiClient {
                 + "&type=" + enc(req.getScanType())
                 + "&filename=" + enc(file.getName());
         String scanId = ingestSingleShot("/scans/third-party", query, file, "Upload third-party scan");
-        List<String> scanIds = scanId != null ? List.of(scanId) : List.of();
+        // As with SBOM: {scanId} on the current backend, 204 on the previous → resolve from version.
+        List<String> scanIds = scanId != null ? List.of(scanId) : resolveScanIdsForVersion(versionId);
         scanIds.forEach(result::addScanId);
-        log("Third-party scan submitted" + (scanId != null ? " (scan " + scanId + ")" : "") + " (scanner "
-                + req.getScanType() + ").");
+        log("Third-party scan submitted" + (scanIds.isEmpty() ? "" : " (scan " + String.join(", ", scanIds) + ")")
+                + " (scanner " + req.getScanType() + ").");
 
         finishWithPolling(req, scanIds, result);
     }
@@ -399,6 +406,52 @@ final class FiniteStateApiClient {
         return ids;
     }
 
+    /**
+     * Resolve the real scan id(s) attached to a version. Used when a submit path doesn't hand back an
+     * id: the previous backend's binary {@code /start} returns no scans (its {@code /scans/upload}
+     * scanId is an upload-context id, not a pollable scan), and its single-shot SBOM/third-party
+     * return 204 with no id. Best-effort — on any API error, return empty so submission still reports
+     * success (only status polling is affected). The current backend never needs this (its /start
+     * returns the scans and its single-shot returns a scanId).
+     */
+    private List<String> resolveScanIdsForVersion(String versionId) throws InterruptedException {
+        try {
+            HttpResponse<String> resp = execGet(
+                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=50")
+                            .GET()
+                            .build(),
+                    "List version scans");
+            JSON parsed = parse(resp.body());
+            JSONArray arr = null;
+            if (parsed instanceof JSONArray) {
+                arr = (JSONArray) parsed;
+            } else if (parsed instanceof JSONObject) {
+                JSONObject obj = (JSONObject) parsed;
+                if (obj.has("items") && obj.get("items") instanceof JSONArray) {
+                    arr = obj.getJSONArray("items");
+                } else if (obj.has("data") && obj.get("data") instanceof JSONArray) {
+                    arr = obj.getJSONArray("data");
+                }
+            }
+            List<String> ids = new ArrayList<>();
+            if (arr != null) {
+                for (int i = 0; i < arr.size(); i++) {
+                    if (arr.get(i) instanceof JSONObject) {
+                        String id = optString(arr.getJSONObject(i), "id", null);
+                        if (id != null) {
+                            ids.add(id);
+                        }
+                    }
+                }
+            }
+            return ids;
+        } catch (FiniteStateApiException e) {
+            log("WARNING: could not resolve scan id(s) for the version (" + e.getMessage()
+                    + "); status polling may be unavailable for this submission.");
+            return List.of();
+        }
+    }
+
     // ========================================================================
     // SBOM / third-party single-shot upload
     // ========================================================================
@@ -441,9 +494,14 @@ final class FiniteStateApiClient {
         while (true) {
             boolean allTerminal = true;
             boolean anyFailure = false;
+            boolean anyReadable = false;
             String lastStatus = "UNKNOWN";
             for (String scanId : scanIds) {
                 JSONObject s = getScanStatus(scanId);
+                if (s == null) {
+                    continue; // status endpoint not available on this backend (see getScanStatus)
+                }
+                anyReadable = true;
                 String status = optString(s, "status", "UNKNOWN");
                 lastStatus = status;
                 if (FAILURE_TERMINAL.contains(status)) {
@@ -451,6 +509,14 @@ final class FiniteStateApiClient {
                 } else if (!SUCCESS_TERMINAL.contains(status)) {
                     allTerminal = false;
                 }
+            }
+            // The previous backend doesn't expose a per-scan status endpoint (GET /scans/{id}/status
+            // 404s). Rather than fail a build that submitted fine, degrade to fire-and-forget: report
+            // submitted-success and let the user follow progress in the Finite State UI.
+            if (!anyReadable) {
+                log("NOTE: live scan-status polling is not available on this Finite State backend; "
+                        + "the scan was submitted and continues in the Finite State UI.");
+                return new PollOutcome("SUBMITTED", true);
             }
             if (anyFailure) {
                 return new PollOutcome(lastStatus, false);
@@ -465,10 +531,23 @@ final class FiniteStateApiClient {
         }
     }
 
+    /**
+     * Fetch a scan's status. Returns {@code null} when the backend does not expose a per-scan status
+     * endpoint (the previous backend replies 404 to {@code GET /scans/{id}/status} for every id — it
+     * surfaces status only via the scan-list endpoint). A {@code null} lets the poller degrade to
+     * fire-and-forget rather than treat the missing endpoint as a scan failure.
+     */
     JSONObject getScanStatus(String scanId) throws FiniteStateApiException, InterruptedException {
-        HttpResponse<String> resp =
-                execGet(apiReq("/scans/" + scanId + "/status").GET().build(), "Get scan status");
-        return asObject(parse(resp.body()));
+        try {
+            HttpResponse<String> resp =
+                    execGet(apiReq("/scans/" + enc(scanId) + "/status").GET().build(), "Get scan status");
+            return asObject(parse(resp.body()));
+        } catch (FiniteStateApiException e) {
+            if (e.getStatusCode() == 404) {
+                return null;
+            }
+            throw e;
+        }
     }
 
     // ========================================================================
