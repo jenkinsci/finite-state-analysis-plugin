@@ -446,9 +446,11 @@ final class FiniteStateApiClient {
     private List<String> resolveScanIdsForVersion(String versionId) throws InterruptedException {
         try {
             // A version holds only a handful of scans (one binary spawns a few, plus SBOM/third-party),
-            // so a single 200-row page always covers it — no pagination needed for per-version scoping.
+            // so a single 100-row page always covers it — no pagination needed for per-version scoping.
+            // limit is capped at 100: the previous backend (Alloy) rejects limit>100 with sqlstate 400
+            // ("maximum: 100"), which would break scan-id resolution + status polling on that backend.
             HttpResponse<String> resp = execGet(
-                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=200")
+                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=100")
                             .GET()
                             .build(),
                     "List version scans");
@@ -607,7 +609,7 @@ final class FiniteStateApiClient {
         java.util.Map<String, String> map = new java.util.HashMap<>();
         try {
             HttpResponse<String> resp = execGet(
-                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=200")
+                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=100")
                             .GET()
                             .build(),
                     "List version scan statuses");
