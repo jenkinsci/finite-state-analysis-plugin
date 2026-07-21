@@ -63,8 +63,13 @@ final class FiniteStateApiClient {
     private final HttpClient http;
 
     FiniteStateApiClient(String subdomain, Secret apiToken, TaskListener listener) {
+        this(subdomain, apiToken, listener, "https://" + subdomain + "/api/public/v0");
+    }
+
+    /** Visible for testing: lets a test point the client at a local stub server (e.g. http://…). */
+    FiniteStateApiClient(String subdomain, Secret apiToken, TaskListener listener, String baseUrl) {
         this.subdomain = subdomain;
-        this.baseUrl = "https://" + subdomain + "/api/public/v0";
+        this.baseUrl = baseUrl;
         this.apiToken = apiToken;
         this.listener = listener;
         this.http = HttpClient.newBuilder()
@@ -103,12 +108,20 @@ final class FiniteStateApiClient {
         ScanUploadContext ctx = createScanUpload(versionId, file.getName(), types, wantMultipart, size);
 
         // Branch on what the server actually created (ctx.multipartUpload), not just what we asked for.
+        // Validate the follow-up field is present up front so a malformed create response fails here
+        // with a clear message instead of deep in the part-URL / PUT calls (mirrors the mb-api client).
         if (ctx.multipartUpload) {
+            if (ctx.s3UploadId == null || ctx.s3UploadId.isBlank()) {
+                throw new FiniteStateApiException(0, "Create scan upload returned multipart without an s3UploadId.");
+            }
             PartPlan plan = resolvePartPlan(ctx, size);
             log("Uploading binary via multipart (" + plan.partCount + " parts)...");
             JSONObject eTags = uploadMultipart(file, ctx, plan);
             completeBinaryUpload(ctx.scanId, ctx.s3UploadId, eTags);
         } else {
+            if (ctx.uploadUrl == null || ctx.uploadUrl.isBlank()) {
+                throw new FiniteStateApiException(0, "Create scan upload returned single-PUT without an uploadUrl.");
+            }
             log("Uploading binary...");
             putFile(ctx.uploadUrl, file, "application/octet-stream");
         }
@@ -128,7 +141,7 @@ final class FiniteStateApiClient {
         scanIds.forEach(result::addScanId);
         log("Started " + scanIds.size() + " scan(s) for binary analysis.");
 
-        finishWithPolling(req, scanIds, result);
+        finishWithPolling(req, scanIds, versionId, result);
     }
 
     /** SBOM import: resolve project/version → server-side single-shot upload (auto-detected CycloneDX/SPDX) → poll. */
@@ -155,7 +168,7 @@ final class FiniteStateApiClient {
         scanIds.forEach(result::addScanId);
         log("SBOM import submitted" + (scanIds.isEmpty() ? "." : " (scan " + String.join(", ", scanIds) + ")."));
 
-        finishWithPolling(req, scanIds, result);
+        finishWithPolling(req, scanIds, versionId, result);
     }
 
     /** Third-party scan import: resolve project/version → server-side single-shot upload (scanner = scanType) → poll. */
@@ -180,22 +193,30 @@ final class FiniteStateApiClient {
         log("Third-party scan submitted" + (scanIds.isEmpty() ? "" : " (scan " + String.join(", ", scanIds) + ")")
                 + " (scanner " + req.getScanType() + ").");
 
-        finishWithPolling(req, scanIds, result);
+        finishWithPolling(req, scanIds, versionId, result);
     }
 
     /**
      * FR-7: when waitForCompletion is set, poll to a terminal state (or timeout) and set the build
      * outcome from the scan status; otherwise return success once processing is accepted.
      */
-    private void finishWithPolling(FiniteStateScanRequest req, List<String> scanIds, ScanResult result)
+    private void finishWithPolling(
+            FiniteStateScanRequest req, List<String> scanIds, String versionId, ScanResult result)
             throws InterruptedException, FiniteStateApiException {
         if (!req.isWaitForCompletion()) {
             result.setFinalStatus("SUBMITTED");
             result.setSuccess(true);
             return;
         }
+        if (scanIds.isEmpty()) {
+            // Nothing pollable was resolved — don't claim a terminal outcome; report submitted.
+            log("NOTE: no scan id was available to poll; the scan was submitted and continues in the Finite State UI.");
+            result.setFinalStatus("SUBMITTED");
+            result.setSuccess(true);
+            return;
+        }
         log("Waiting for completion (timeout " + req.getPollTimeoutMinutes() + " min)...");
-        PollOutcome outcome = pollUntilTerminal(scanIds, req.getPollTimeoutMinutes());
+        PollOutcome outcome = pollUntilTerminal(scanIds, versionId, req.getPollTimeoutMinutes());
         result.setFinalStatus(outcome.status);
         result.setSuccess(outcome.success);
     }
@@ -424,23 +445,14 @@ final class FiniteStateApiClient {
      */
     private List<String> resolveScanIdsForVersion(String versionId) throws InterruptedException {
         try {
+            // A version holds only a handful of scans (one binary spawns a few, plus SBOM/third-party),
+            // so a single 200-row page always covers it — no pagination needed for per-version scoping.
             HttpResponse<String> resp = execGet(
-                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=50")
+                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=200")
                             .GET()
                             .build(),
                     "List version scans");
-            JSON parsed = parse(resp.body());
-            JSONArray arr = null;
-            if (parsed instanceof JSONArray) {
-                arr = (JSONArray) parsed;
-            } else if (parsed instanceof JSONObject) {
-                JSONObject obj = (JSONObject) parsed;
-                if (obj.has("items") && obj.get("items") instanceof JSONArray) {
-                    arr = obj.getJSONArray("items");
-                } else if (obj.has("data") && obj.get("data") instanceof JSONArray) {
-                    arr = obj.getJSONArray("data");
-                }
-            }
+            JSONArray arr = itemsArray(parse(resp.body()));
             List<String> ids = new ArrayList<>();
             if (arr != null) {
                 for (int i = 0; i < arr.size(); i++) {
@@ -460,17 +472,43 @@ final class FiniteStateApiClient {
         }
     }
 
+    /** Extract the array from a list response, whether it's a bare array or wrapped in items/data. */
+    private static JSONArray itemsArray(JSON parsed) {
+        if (parsed instanceof JSONArray) {
+            return (JSONArray) parsed;
+        }
+        if (parsed instanceof JSONObject) {
+            JSONObject obj = (JSONObject) parsed;
+            if (obj.has("items") && obj.get("items") instanceof JSONArray) {
+                return obj.getJSONArray("items");
+            }
+            if (obj.has("data") && obj.get("data") instanceof JSONArray) {
+                return obj.getJSONArray("data");
+            }
+        }
+        return null;
+    }
+
     /**
      * Scan id(s) on the version that are NOT in {@code prior} — i.e. the ones this submission just
      * created. Isolates a task's own scan(s) from siblings when multiple tasks share one version
-     * (externalized-ID builds). Returns them in listing order.
+     * (externalized-ID builds). Retries briefly because the previous backend may not index a
+     * just-created scan instantly — so we report the real, pollable id(s) rather than falling back to
+     * the (unpollable) upload-context id. Returns them in listing order.
      */
     private List<String> newScanIdsSince(String versionId, List<String> prior) throws InterruptedException {
         List<String> fresh = new ArrayList<>();
-        for (String id : resolveScanIdsForVersion(versionId)) {
-            if (!prior.contains(id)) {
-                fresh.add(id);
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            fresh = new ArrayList<>();
+            for (String id : resolveScanIdsForVersion(versionId)) {
+                if (!prior.contains(id)) {
+                    fresh.add(id);
+                }
             }
+            if (!fresh.isEmpty() || attempt == 3) {
+                break;
+            }
+            Thread.sleep(1500L);
         }
         return fresh;
     }
@@ -511,35 +549,40 @@ final class FiniteStateApiClient {
     // Status polling (FR-7)
     // ========================================================================
 
-    PollOutcome pollUntilTerminal(List<String> scanIds, int timeoutMinutes)
+    PollOutcome pollUntilTerminal(List<String> scanIds, String versionId, int timeoutMinutes)
             throws FiniteStateApiException, InterruptedException {
         long deadline = System.currentTimeMillis() + (long) timeoutMinutes * 60_000L;
         while (true) {
+            // Per-iteration, lazily-fetched previous-backend fallback: {scanId -> status} from the
+            // version's scan list (that backend has no per-scan /status endpoint but reports status here).
+            java.util.Map<String, String> versionStatuses = null;
             boolean allTerminal = true;
             boolean anyFailure = false;
-            boolean anyReadable = false;
             String lastStatus = "UNKNOWN";
             for (String scanId : scanIds) {
-                JSONObject s = getScanStatus(scanId);
-                if (s == null) {
-                    continue; // status endpoint not available on this backend (see getScanStatus)
+                String status = null;
+                JSONObject s = getScanStatus(scanId); // current backend: GET /scans/{id}/status
+                if (s != null) {
+                    status = optString(s, "status", null);
+                } else {
+                    if (versionStatuses == null) {
+                        versionStatuses = getVersionScanStatuses(versionId);
+                    }
+                    status = versionStatuses.get(scanId);
                 }
-                anyReadable = true;
-                String status = optString(s, "status", "UNKNOWN");
+                if (status == null || status.isBlank()) {
+                    // Can't confirm status yet → treat as non-terminal and keep waiting. We never
+                    // report a green "completed" without actually reading a terminal status, so
+                    // waitForCompletion can't silently pass while a scan is still running.
+                    allTerminal = false;
+                    continue;
+                }
                 lastStatus = status;
                 if (FAILURE_TERMINAL.contains(status)) {
                     anyFailure = true;
                 } else if (!SUCCESS_TERMINAL.contains(status)) {
                     allTerminal = false;
                 }
-            }
-            // The previous backend doesn't expose a per-scan status endpoint (GET /scans/{id}/status
-            // 404s). Rather than fail a build that submitted fine, degrade to fire-and-forget: report
-            // submitted-success and let the user follow progress in the Finite State UI.
-            if (!anyReadable) {
-                log("NOTE: live scan-status polling is not available on this Finite State backend; "
-                        + "the scan was submitted and continues in the Finite State UI.");
-                return new PollOutcome("SUBMITTED", true);
             }
             if (anyFailure) {
                 return new PollOutcome(lastStatus, false);
@@ -555,10 +598,43 @@ final class FiniteStateApiClient {
     }
 
     /**
-     * Fetch a scan's status. Returns {@code null} when the backend does not expose a per-scan status
-     * endpoint (the previous backend replies 404 to {@code GET /scans/{id}/status} for every id — it
-     * surfaces status only via the scan-list endpoint). A {@code null} lets the poller degrade to
-     * fire-and-forget rather than treat the missing endpoint as a scan failure.
+     * {@code scanId -> status} for every scan on a version, from the scan-list endpoint. Used as the
+     * status source on the previous backend, which has no per-scan {@code /status} endpoint but does
+     * report {@code status} in the list. Best-effort — returns an empty map on API error (the poller
+     * then keeps waiting rather than reporting a false result).
+     */
+    private java.util.Map<String, String> getVersionScanStatuses(String versionId) throws InterruptedException {
+        java.util.Map<String, String> map = new java.util.HashMap<>();
+        try {
+            HttpResponse<String> resp = execGet(
+                    apiReq("/scans?filter=" + enc("projectVersion==\"" + versionId + "\"") + "&limit=200")
+                            .GET()
+                            .build(),
+                    "List version scan statuses");
+            JSONArray arr = itemsArray(parse(resp.body()));
+            if (arr != null) {
+                for (int i = 0; i < arr.size(); i++) {
+                    if (arr.get(i) instanceof JSONObject) {
+                        JSONObject o = arr.getJSONObject(i);
+                        String id = optString(o, "id", null);
+                        String st = optString(o, "status", null);
+                        if (id != null && st != null) {
+                            map.put(id, st);
+                        }
+                    }
+                }
+            }
+        } catch (FiniteStateApiException e) {
+            log("WARNING: could not read scan statuses for the version (" + e.getMessage() + "); will retry.");
+        }
+        return map;
+    }
+
+    /**
+     * Fetch a scan's status via {@code GET /scans/{id}/status}. Returns {@code null} on 404 — the
+     * previous backend has no per-scan status endpoint (it surfaces status only in the scan list), so
+     * a {@code null} tells the poller to fall back to {@link #getVersionScanStatuses} rather than treat
+     * the missing endpoint as a failure.
      */
     JSONObject getScanStatus(String scanId) throws FiniteStateApiException, InterruptedException {
         try {
@@ -840,7 +916,9 @@ final class FiniteStateApiClient {
         if (req.isConfigEnabled()) {
             types.add("config");
         }
-        if (req.isReachabilityEnabled()) {
+        // Reachability maps to vulnerability_analysis and — matching the prior BinaryScanConfig
+        // behavior and the UI coupling — only applies when Binary SCA is also enabled.
+        if (req.isReachabilityEnabled() && req.isScaEnabled()) {
             types.add("vulnerability_analysis");
         }
         if (types.isEmpty()) {

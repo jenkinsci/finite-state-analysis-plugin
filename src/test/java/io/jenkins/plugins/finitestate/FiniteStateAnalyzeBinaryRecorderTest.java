@@ -47,10 +47,13 @@ public class FiniteStateAnalyzeBinaryRecorderTest {
     }
 
     @Test
-    public void reachabilityMapsToVulnerabilityAnalysis() {
-        // Reachability maps to the vulnerability_analysis token; the façade accepts it standalone.
-        List<String> types = typesFor(false, false, false, true);
-        assertTrue(types.contains("vulnerability_analysis"));
+    public void reachabilityRequiresSca() {
+        // Reachability maps to vulnerability_analysis only when SCA is also on (parity with the prior
+        // BinaryScanConfig behavior and the UI coupling). Reachability alone (SCA off) → no token,
+        // so it falls back to the sca default.
+        assertEquals(List.of("sca"), typesFor(false, false, false, true));
+        // With SCA on, reachability contributes vulnerability_analysis.
+        assertTrue(typesFor(true, false, false, true).contains("vulnerability_analysis"));
     }
 
     @Test

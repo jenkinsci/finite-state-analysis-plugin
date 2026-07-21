@@ -39,6 +39,15 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
     protected Boolean waitForCompletion;
     protected Integer pollTimeoutMinutes;
 
+    /**
+     * Deprecated, ignored. Retained only for backward compatibility: the {@code platform} selector
+     * (legacy CLT vs 2026 REST) existed in 1.09x, so jobs whose persisted XML contains
+     * {@code <platform>} and Pipelines that still pass {@code platform: 'legacy'|'2026'} keep loading
+     * and running. Every analysis now uses the public v0 REST API regardless of this value.
+     */
+    @Deprecated
+    protected transient String platform;
+
     protected BaseFiniteStateRecorder() {
         // Default constructor for inheritance
     }
@@ -76,6 +85,23 @@ public abstract class BaseFiniteStateRecorder extends Recorder implements Simple
 
     public int getPollTimeoutMinutes() {
         return pollTimeoutMinutes != null && pollTimeoutMinutes > 0 ? pollTimeoutMinutes : DEFAULT_POLL_TIMEOUT_MINUTES;
+    }
+
+    /** @deprecated Ignored; retained for backward compatibility. See {@link #platform}. */
+    @Deprecated
+    public String getPlatform() {
+        return platform;
+    }
+
+    /**
+     * @deprecated Ignored. Kept so existing Pipeline definitions that still pass
+     *     {@code platform: 'legacy'|'2026'} bind without a step-validation error. Every analysis now
+     *     runs through the public v0 REST API regardless of this value.
+     */
+    @Deprecated
+    @DataBoundSetter
+    public void setPlatform(String platform) {
+        this.platform = platform; // stored but never read
     }
 
     // Common setters
