@@ -91,6 +91,12 @@ final class FiniteStateApiClient {
         result.setVersionId(versionId);
         result.setUiUrl(buildUiUrl(subdomain, projectId, versionId));
 
+        // Baseline of scans already on the version, so that when we later resolve this submission's
+        // scan id(s) from the version (previous backend), we report only the NEW ones — not siblings
+        // from earlier tasks that share the same version (externalized-ID builds run all 3 tasks
+        // against one version).
+        List<String> priorScanIds = resolveScanIdsForVersion(versionId);
+
         long size = file.length();
         List<String> types = buildScanTypes(req);
         boolean wantMultipart = size > SINGLE_PUT_MAX_BYTES;
@@ -114,7 +120,7 @@ final class FiniteStateApiClient {
             // processing and returns none — and there /scans/upload's scanId is an upload-context id,
             // not a pollable scan. Resolve the real scan id(s) from the version so status polling
             // works; keep the context id only as a last resort so we still report something.
-            scanIds = resolveScanIdsForVersion(versionId);
+            scanIds = newScanIdsSince(versionId, priorScanIds);
             if (scanIds.isEmpty()) {
                 scanIds = List.of(ctx.scanId);
             }
@@ -134,6 +140,7 @@ final class FiniteStateApiClient {
         result.setVersionId(versionId);
         result.setUiUrl(buildUiUrl(subdomain, projectId, versionId));
 
+        List<String> priorScanIds = resolveScanIdsForVersion(versionId);
         String format = detectSbomFormat(file);
         log("Detected SBOM format: " + format);
         // Server-side single-shot upload (the file goes to the API, which uploads to storage and
@@ -142,9 +149,9 @@ final class FiniteStateApiClient {
                 + "&type=" + ("spdx".equals(format) ? "spdx" : "cdx")
                 + "&filename=" + enc(file.getName());
         // The current backend returns {scanId}; the previous backend returns 204 with no id, so
-        // resolve the real scan id from the version there (enables status polling on both).
+        // resolve the id of the scan we just created (new since the baseline) — enables polling on both.
         String scanId = ingestSingleShot("/scans/sbom", query, file, "Upload SBOM");
-        List<String> scanIds = scanId != null ? List.of(scanId) : resolveScanIdsForVersion(versionId);
+        List<String> scanIds = scanId != null ? List.of(scanId) : newScanIdsSince(versionId, priorScanIds);
         scanIds.forEach(result::addScanId);
         log("SBOM import submitted" + (scanIds.isEmpty() ? "." : " (scan " + String.join(", ", scanIds) + ")."));
 
@@ -160,14 +167,15 @@ final class FiniteStateApiClient {
         result.setVersionId(versionId);
         result.setUiUrl(buildUiUrl(subdomain, projectId, versionId));
 
+        List<String> priorScanIds = resolveScanIdsForVersion(versionId);
         // Server-side single-shot upload (see runSbom) — the API uploads the file and triggers
         // third-party processing in one call, so scanner output never transits a client->storage PUT.
         String query = "projectVersionId=" + enc(versionId)
                 + "&type=" + enc(req.getScanType())
                 + "&filename=" + enc(file.getName());
         String scanId = ingestSingleShot("/scans/third-party", query, file, "Upload third-party scan");
-        // As with SBOM: {scanId} on the current backend, 204 on the previous → resolve from version.
-        List<String> scanIds = scanId != null ? List.of(scanId) : resolveScanIdsForVersion(versionId);
+        // As with SBOM: {scanId} on the current backend, 204 on the previous → resolve the new scan.
+        List<String> scanIds = scanId != null ? List.of(scanId) : newScanIdsSince(versionId, priorScanIds);
         scanIds.forEach(result::addScanId);
         log("Third-party scan submitted" + (scanIds.isEmpty() ? "" : " (scan " + String.join(", ", scanIds) + ")")
                 + " (scanner " + req.getScanType() + ").");
@@ -450,6 +458,21 @@ final class FiniteStateApiClient {
                     + "); status polling may be unavailable for this submission.");
             return List.of();
         }
+    }
+
+    /**
+     * Scan id(s) on the version that are NOT in {@code prior} — i.e. the ones this submission just
+     * created. Isolates a task's own scan(s) from siblings when multiple tasks share one version
+     * (externalized-ID builds). Returns them in listing order.
+     */
+    private List<String> newScanIdsSince(String versionId, List<String> prior) throws InterruptedException {
+        List<String> fresh = new ArrayList<>();
+        for (String id : resolveScanIdsForVersion(versionId)) {
+            if (!prior.contains(id)) {
+                fresh.add(id);
+            }
+        }
+        return fresh;
     }
 
     // ========================================================================
