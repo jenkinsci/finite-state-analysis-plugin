@@ -156,6 +156,9 @@ To preview release notes without actually publishing, run the CD workflow with `
 - If the CD workflow does not trigger automatically after merging, run it manually as described in step 4.
 - Check the [Actions tab](https://github.com/jenkinsci/finite-state-analysis-plugin/actions) for build logs if something fails.
 - The `MAVEN_USERNAME` and `MAVEN_TOKEN` secrets must be configured in the `jenkinsci` repo settings for publishing to work.
+- **`401 Unauthorized` on deploy** = the auto-rotating `MAVEN_TOKEN` expired (it is valid for only ~3h). Just re-run the `cd` workflow once the secret refreshes; no code change is needed.
+- **`403 Forbidden` on deploy** = the release version already exists on `repo.jenkins-ci.org` (Jenkins releases are immutable — a version cannot be re-deployed), usually because a prior run published it partially. The auto-version is derived from the git commit, so the fix is to **push a new commit and run `cd` again**, which produces a fresh version. See jenkins-infra/helpdesk#5225.
+- **`release` job skipped (`SHOULD_RELEASE: false`)** = no merged PR since the last release carries a changelog label. Add a release-drafter label (e.g. `enhancement`) to the merged PR(s), then re-run `cd`.
 
 ### Managing developer access and code reviews
 
